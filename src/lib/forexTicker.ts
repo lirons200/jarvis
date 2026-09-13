@@ -31,6 +31,27 @@ export function computeDirection(bid: number | null, baseline: number | null): D
   return 'neutral'
 }
 
+/**
+ * Merges a fresh poll (`raw`) into the existing price map (`current`),
+ * capturing each pair's baseline the first time it's ever seen this session
+ * and never overwriting it afterward — that's what "change since session
+ * start" means. Existing baselines are carried forward from the previous
+ * state on every poll. Pulled out of store.ts's setForexPrices as a pure
+ * function so the baseline-capture rule — the subtlest logic in this
+ * feature — can be unit-tested directly.
+ */
+export function mergeForexPrices(
+  current: Record<string, ForexPriceEntry>,
+  raw: RawPrices,
+): Record<string, ForexPriceEntry> {
+  const next: Record<string, ForexPriceEntry> = {}
+  for (const [pair, entry] of Object.entries(raw)) {
+    const baseline = current[pair]?.baseline ?? entry.bid
+    next[pair] = { ...entry, baseline }
+  }
+  return next
+}
+
 /** "just now" / "4s ago" / "2m ago" — enough precision for a glanceable chip. */
 export function formatRelativeTime(atMs: number, nowMs: number): string {
   const deltaS = Math.max(0, Math.round((nowMs - atMs) / 1000))

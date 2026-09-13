@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { ForexPriceEntry, RawPrices } from './lib/forexTicker'
+import { mergeForexPrices } from './lib/forexTicker'
 
 export type Phase =
   | 'offline'   // waiting for the click that unlocks audio
@@ -404,19 +405,9 @@ export const useStore = create<State>((set) => ({
   fireEffect: (kind) =>
     set((s) => ({ ui: { ...s.ui, effect: { kind, at: Date.now() } } })),
   resetUi: () => set({ ui: defaultUi() }),
-  // Captures each pair's baseline the first time it's ever seen this
-  // session, and never overwrites it afterward — that's what "change since
-  // session start" means. Existing baselines are carried forward from the
-  // previous state on every poll.
-  setForexPrices: (raw) =>
-    set((s) => {
-      const next: State['forex'] = {}
-      for (const [pair, entry] of Object.entries(raw)) {
-        const baseline = s.forex[pair]?.baseline ?? entry.bid
-        next[pair] = { ...entry, baseline }
-      }
-      return { forex: next }
-    }),
+  // Baseline-capture/carry-forward logic lives in mergeForexPrices
+  // (src/lib/forexTicker.ts) so it can be unit-tested outside Vite.
+  setForexPrices: (raw) => set((s) => ({ forex: mergeForexPrices(s.forex, raw) })),
   // An explicit order outranks the sticky flag. `hold: 'sticky'` only ever
   // meant "survive the next turn boundary"; when someone says "clear the
   // screen", a card staying up because an earlier turn asked nicely reads as

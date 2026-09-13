@@ -1,6 +1,7 @@
 import { test, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeDirection, formatRelativeTime, buildDetailHtml, startForexPolling } from './forexTicker'
+import { computeDirection, formatRelativeTime, buildDetailHtml, startForexPolling, mergeForexPrices } from './forexTicker'
+import type { ForexPriceEntry } from './forexTicker'
 import { ALLOWED_CLASSES } from '../ui/sanitise'
 
 test('computeDirection reports up when the bid rose above the baseline', () => {
@@ -87,6 +88,34 @@ test('buildDetailHtml uses only allowed class names', () => {
       `Class "${c}" used in buildDetailHtml but not in ALLOWED_CLASSES`,
     )
   })
+})
+
+test('mergeForexPrices captures the first-seen bid as baseline', () => {
+  const result = mergeForexPrices({}, {
+    EUR_USD: { bid: 1.1, ask: 1.1002, time: '2026-09-13T00:00:00Z', tradeable: true, stale: false, fetchedAtMs: 1000 },
+  })
+  assert.equal(result.EUR_USD.baseline, 1.1)
+})
+
+test('mergeForexPrices never overwrites an existing baseline', () => {
+  const current: Record<string, ForexPriceEntry> = {
+    EUR_USD: { bid: 1.1, ask: 1.1002, time: '2026-09-13T00:00:00Z', tradeable: true, stale: false, fetchedAtMs: 1000, baseline: 1.1 },
+  }
+  const result = mergeForexPrices(current, {
+    EUR_USD: { bid: 1.25, ask: 1.2502, time: '2026-09-13T00:00:05Z', tradeable: true, stale: false, fetchedAtMs: 2000 },
+  })
+  assert.equal(result.EUR_USD.baseline, 1.1)
+  assert.equal(result.EUR_USD.bid, 1.25)
+})
+
+test('mergeForexPrices retries capturing the baseline if the first-seen bid was null', () => {
+  const current: Record<string, ForexPriceEntry> = {
+    EUR_USD: { bid: null, ask: null, time: null, tradeable: false, stale: false, fetchedAtMs: 1000, baseline: null },
+  }
+  const result = mergeForexPrices(current, {
+    EUR_USD: { bid: 1.12, ask: 1.1202, time: '2026-09-13T00:00:05Z', tradeable: true, stale: false, fetchedAtMs: 2000 },
+  })
+  assert.equal(result.EUR_USD.baseline, 1.12)
 })
 
 test('startForexPolling reschedules after onUpdate throws', async () => {
