@@ -4,6 +4,13 @@
  * unit-tested directly; ForexTicker.tsx and store.ts are the only callers.
  */
 
+import { BRIDGE_HTTP_URL } from '../config'
+
+export type RawPrices = Record<
+  string,
+  { bid: number | null; ask: number | null; time: string | null; tradeable: boolean; stale: boolean; fetchedAtMs: number }
+>
+
 export type ForexPriceEntry = {
   bid: number | null
   ask: number | null
@@ -77,4 +84,38 @@ export function buildDetailHtml(
     `<div class="hud-row"><span class="hud-label">Status</span><span class="hud-tag">${esc(status)}</span></div>` +
     `</div>`
   )
+}
+
+/**
+ * Polls `GET /forex/prices` on the bridge every `intervalMs` and calls
+ * `onUpdate` with the raw cache each time it succeeds. A failed fetch is
+ * swallowed — the caller keeps whatever it last had, matching the bridge's
+ * own "keep serving the last known price" philosophy. Returns a stop
+ * function.
+ */
+export function startForexPolling(
+  onUpdate: (prices: RawPrices) => void,
+  intervalMs = 5000,
+): () => void {
+  let stopped = false
+
+  const tick = async () => {
+    try {
+      const res = await fetch(`${BRIDGE_HTTP_URL}/forex/prices`, {
+        signal: AbortSignal.timeout(4000),
+      })
+      if (res.ok) {
+        const data = (await res.json()) as { prices?: RawPrices }
+        if (data.prices) onUpdate(data.prices)
+      }
+    } catch {
+      // Bridge unreachable or forex disabled — leave the store as it is.
+    }
+    if (!stopped) setTimeout(tick, intervalMs)
+  }
+
+  void tick()
+  return () => {
+    stopped = true
+  }
 }
