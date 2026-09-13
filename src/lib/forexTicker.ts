@@ -18,7 +18,8 @@ export type ForexPriceEntry = {
 export type Direction = 'up' | 'down' | 'neutral'
 
 /** Compares the current bid against the session-start baseline. */
-export function computeDirection(bid: number, baseline: number | null): Direction {
+export function computeDirection(bid: number | null, baseline: number | null): Direction {
+  if (bid === null) return 'neutral'
   if (baseline === null) return 'neutral'
   if (bid > baseline) return 'up'
   if (bid < baseline) return 'down'

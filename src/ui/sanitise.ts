@@ -192,7 +192,7 @@ function hardenMedia(root: Element) {
  * (bridge/panels.mjs). A name there that is missing here is silently stripped,
  * which is the failure mode we want but not one the model can diagnose.
  */
-const ALLOWED_CLASSES = new Set([
+export const ALLOWED_CLASSES = new Set([
   'hud-rows', 'hud-row', 'hud-idx', 'hud-main', 'hud-label', 'hud-sub',
   'hud-tag', 'hud-metric', 'hud-unit', 'hud-note', 'hud-img', 'hud-caption',
   'hud-grid', 'hud-bar', 'hud-dim', 'hud-hot',

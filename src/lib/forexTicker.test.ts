@@ -1,6 +1,36 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'fs'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
 import { computeDirection, formatRelativeTime, buildDetailHtml } from './forexTicker'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+
+/**
+ * Extract ALLOWED_CLASSES from sanitise.ts source code to ensure drift detection.
+ * This reads the actual source file and parses the Set definition, avoiding import
+ * issues with Vite env variables in the test environment.
+ */
+function parseAllowedClassesFromSource(): Set<string> {
+  const sanitisePath = join(__dirname, '../ui/sanitise.ts')
+  const source = readFileSync(sanitisePath, 'utf-8')
+
+  // Match the ALLOWED_CLASSES = new Set([...]) definition
+  const match = source.match(/export const ALLOWED_CLASSES = new Set\(\[([\s\S]*?)\]\)/)
+  if (!match) {
+    throw new Error('Could not find ALLOWED_CLASSES definition in sanitise.ts')
+  }
+
+  // Extract the class names from the Set definition
+  const classesStr = match[1]
+  const classMatches = classesStr.match(/'([^']+)'/g)
+  if (!classMatches) {
+    throw new Error('Could not parse class names from ALLOWED_CLASSES')
+  }
+
+  return new Set(classMatches.map(m => m.slice(1, -1)))
+}
 
 test('computeDirection reports up when the bid rose above the baseline', () => {
   assert.equal(computeDirection(1.15, 1.1), 'up')
@@ -52,4 +82,38 @@ test('buildDetailHtml reports market closed for a non-tradeable pair', () => {
     baseline: null,
   }, 5000)
   assert.match(html, /market closed/i)
+})
+
+test('computeDirection returns neutral when bid is null', () => {
+  assert.equal(computeDirection(null, 1.1), 'neutral')
+})
+
+test('buildDetailHtml uses only allowed class names', () => {
+  const allowedClasses = parseAllowedClassesFromSource()
+
+  const html = buildDetailHtml('EUR_USD', {
+    bid: 1.13015,
+    ask: 1.13028,
+    time: '2026-09-13T18:41:36Z',
+    tradeable: true,
+    stale: false,
+    fetchedAtMs: 1000,
+    baseline: 1.129,
+  }, 5000)
+  // Extract all class="..." tokens from the HTML
+  const classRegex = /class="([^"]*)"/g
+  const usedClasses = new Set<string>()
+  let match
+  while ((match = classRegex.exec(html)) !== null) {
+    match[1].split(/\s+/).forEach((c) => {
+      if (c) usedClasses.add(c)
+    })
+  }
+  // Assert each used class is in ALLOWED_CLASSES
+  usedClasses.forEach((c) => {
+    assert.ok(
+      allowedClasses.has(c),
+      `Class "${c}" used in buildDetailHtml but not in ALLOWED_CLASSES`,
+    )
+  })
 })
