@@ -6,6 +6,15 @@
  */
 
 /**
+ * Polyfill for import.meta.env when running outside Vite (e.g., Node tests).
+ * At test time, import.meta.env is undefined, so provide safe defaults.
+ */
+const _viteEnv: Record<string, string | undefined> =
+  typeof (import.meta?.env ?? null) === 'object' && import.meta?.env
+    ? (import.meta.env as Record<string, string | undefined>)
+    : {}
+
+/**
  * Vite inlines a blank `.env` entry as an empty string, not as undefined, so
  * `??` never falls through to the default — and .env.example ships every
  * optional key blank, which is exactly the shape that used to bite. A blank
@@ -60,7 +69,7 @@ function flag(name: string, raw: unknown, fallback: boolean): boolean {
  */
 export const BACKEND: 'bridge' | 'direct' = choice(
   'VITE_BACKEND',
-  import.meta.env.VITE_BACKEND,
+  _viteEnv.VITE_BACKEND,
   ['bridge', 'direct'] as const,
   'bridge',
 )
@@ -71,7 +80,7 @@ export const BACKEND: 'bridge' | 'direct' = choice(
  * `wss://` maps to `https://` on its own, which is why this is a prefix swap
  * rather than a hardcoded scheme.
  */
-export const BRIDGE_WS_URL = str(import.meta.env.VITE_BRIDGE_URL) ?? 'ws://localhost:8787'
+export const BRIDGE_WS_URL = str(_viteEnv.VITE_BRIDGE_URL) ?? 'ws://localhost:8787'
 export const BRIDGE_HTTP_URL = BRIDGE_WS_URL.replace(/^ws/, 'http')
 
 /**
@@ -87,7 +96,7 @@ export const BRIDGE_HTTP_URL = BRIDGE_WS_URL.replace(/^ws/, 'http')
  */
 export const USE_ELEVENLABS = flag(
   'VITE_USE_ELEVENLABS',
-  import.meta.env.VITE_USE_ELEVENLABS,
+  _viteEnv.VITE_USE_ELEVENLABS,
   false,
 )
 
@@ -109,7 +118,7 @@ export const USE_ELEVENLABS = flag(
  */
 export const TTS_ENGINE: 'kokoro' | 'system' = choice(
   'VITE_TTS_ENGINE',
-  import.meta.env.VITE_TTS_ENGINE,
+  _viteEnv.VITE_TTS_ENGINE,
   ['kokoro', 'system'] as const,
   'system',
 )
@@ -123,17 +132,17 @@ export const TTS_ENGINE: 'kokoro' | 'system' = choice(
  */
 export const KOKORO_VOICE = choice(
   'VITE_KOKORO_VOICE',
-  import.meta.env.VITE_KOKORO_VOICE,
+  _viteEnv.VITE_KOKORO_VOICE,
   ['bm_george', 'bm_fable', 'bm_lewis', 'bm_daniel'] as const,
   'bm_george',
 )
 
 export const env = {
-  anthropicKey: str(import.meta.env.VITE_ANTHROPIC_API_KEY) ?? '',
-  elevenKey: str(import.meta.env.VITE_ELEVENLABS_API_KEY) ?? '',
+  anthropicKey: str(_viteEnv.VITE_ANTHROPIC_API_KEY) ?? '',
+  elevenKey: str(_viteEnv.VITE_ELEVENLABS_API_KEY) ?? '',
   elevenVoiceId:
-    str(import.meta.env.VITE_ELEVENLABS_VOICE_ID) ?? 'JBFqnCBsd6RMkjVDRZzb',
-  porcupineKey: str(import.meta.env.VITE_PICOVOICE_ACCESS_KEY) ?? '',
+    str(_viteEnv.VITE_ELEVENLABS_VOICE_ID) ?? 'JBFqnCBsd6RMkjVDRZzb',
+  porcupineKey: str(_viteEnv.VITE_PICOVOICE_ACCESS_KEY) ?? '',
 }
 
 /** `claude-opus-5` is the strongest model; `claude-sonnet-5` trades a little
@@ -203,16 +212,16 @@ export const MCP_SERVERS: McpServer[] = [
   {
     name: 'zapier',
     label: 'Zapier',
-    url: str(import.meta.env.VITE_ZAPIER_MCP_URL) ?? '',
-    enabled: Boolean(str(import.meta.env.VITE_ZAPIER_MCP_URL)),
+    url: str(_viteEnv.VITE_ZAPIER_MCP_URL) ?? '',
+    enabled: Boolean(str(_viteEnv.VITE_ZAPIER_MCP_URL)),
   },
 
   // Alternative/complementary gateway: ~3,000 apps, free for personal use.
   {
     name: 'pipedream',
     label: 'Pipedream',
-    url: str(import.meta.env.VITE_PIPEDREAM_MCP_URL) ?? '',
-    enabled: Boolean(str(import.meta.env.VITE_PIPEDREAM_MCP_URL)),
+    url: str(_viteEnv.VITE_PIPEDREAM_MCP_URL) ?? '',
+    enabled: Boolean(str(_viteEnv.VITE_PIPEDREAM_MCP_URL)),
   },
 
   // Official first-party servers. Each needs its own OAuth token pasted in.
@@ -220,36 +229,36 @@ export const MCP_SERVERS: McpServer[] = [
     name: 'notion',
     label: 'Notion',
     url: 'https://mcp.notion.com/mcp',
-    token: str(import.meta.env.VITE_NOTION_TOKEN),
-    enabled: Boolean(str(import.meta.env.VITE_NOTION_TOKEN)),
+    token: str(_viteEnv.VITE_NOTION_TOKEN),
+    enabled: Boolean(str(_viteEnv.VITE_NOTION_TOKEN)),
   },
   {
     name: 'linear',
     label: 'Linear',
     url: 'https://mcp.linear.app/mcp',
-    token: str(import.meta.env.VITE_LINEAR_TOKEN),
-    enabled: Boolean(str(import.meta.env.VITE_LINEAR_TOKEN)),
+    token: str(_viteEnv.VITE_LINEAR_TOKEN),
+    enabled: Boolean(str(_viteEnv.VITE_LINEAR_TOKEN)),
   },
   {
     name: 'github',
     label: 'GitHub',
     url: 'https://api.githubcopilot.com/mcp/',
-    token: str(import.meta.env.VITE_GITHUB_TOKEN),
-    enabled: Boolean(str(import.meta.env.VITE_GITHUB_TOKEN)),
+    token: str(_viteEnv.VITE_GITHUB_TOKEN),
+    enabled: Boolean(str(_viteEnv.VITE_GITHUB_TOKEN)),
   },
   {
     name: 'stripe',
     label: 'Stripe',
     url: 'https://mcp.stripe.com',
-    token: str(import.meta.env.VITE_STRIPE_TOKEN),
-    enabled: Boolean(str(import.meta.env.VITE_STRIPE_TOKEN)),
+    token: str(_viteEnv.VITE_STRIPE_TOKEN),
+    enabled: Boolean(str(_viteEnv.VITE_STRIPE_TOKEN)),
   },
   {
     name: 'sentry',
     label: 'Sentry',
     url: 'https://mcp.sentry.dev/mcp',
-    token: str(import.meta.env.VITE_SENTRY_TOKEN),
-    enabled: Boolean(str(import.meta.env.VITE_SENTRY_TOKEN)),
+    token: str(_viteEnv.VITE_SENTRY_TOKEN),
+    enabled: Boolean(str(_viteEnv.VITE_SENTRY_TOKEN)),
   },
   // Home Assistant is self-hosted, so this needs a publicly reachable URL
   // (Nabu Casa Cloud, or a Cloudflare tunnel). Worth the setup — "Jarvis, dim
@@ -260,11 +269,11 @@ export const MCP_SERVERS: McpServer[] = [
   {
     name: 'home',
     label: 'Home',
-    url: str(import.meta.env.VITE_HOMEASSISTANT_MCP_URL) ?? '',
-    token: str(import.meta.env.VITE_HOMEASSISTANT_TOKEN),
+    url: str(_viteEnv.VITE_HOMEASSISTANT_MCP_URL) ?? '',
+    token: str(_viteEnv.VITE_HOMEASSISTANT_TOKEN),
     enabled: Boolean(
-      str(import.meta.env.VITE_HOMEASSISTANT_MCP_URL) &&
-        str(import.meta.env.VITE_HOMEASSISTANT_TOKEN),
+      str(_viteEnv.VITE_HOMEASSISTANT_MCP_URL) &&
+        str(_viteEnv.VITE_HOMEASSISTANT_TOKEN),
     ),
   },
 ]

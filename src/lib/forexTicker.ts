@@ -2,14 +2,12 @@
  * Pure logic for the forex ticker — direction/formatting helpers and the
  * detail-blade HTML builder. Kept free of React and the store so it can be
  * unit-tested directly; ForexTicker.tsx and store.ts are the only callers.
+ * Exception: `startForexPolling` performs I/O (HTTP polling) and is not pure.
  */
 
 import { BRIDGE_HTTP_URL } from '../config'
 
-export type RawPrices = Record<
-  string,
-  { bid: number | null; ask: number | null; time: string | null; tradeable: boolean; stale: boolean; fetchedAtMs: number }
->
+export type RawPrices = Record<string, Omit<ForexPriceEntry, 'baseline'>>
 
 export type ForexPriceEntry = {
   bid: number | null
@@ -110,8 +108,9 @@ export function startForexPolling(
       }
     } catch {
       // Bridge unreachable or forex disabled — leave the store as it is.
+    } finally {
+      if (!stopped) setTimeout(tick, intervalMs)
     }
-    if (!stopped) setTimeout(tick, intervalMs)
   }
 
   void tick()
