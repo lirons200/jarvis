@@ -28,7 +28,7 @@ export function ForexTicker() {
             className={`forex-chip forex-chip-${direction}${entry.stale ? ' forex-chip-stale' : ''}`}
             onClick={() =>
               pushBlade({
-                id: `forex-${pair}-${Date.now()}`,
+                id: `forex-${pair}`,
                 title: label,
                 kind: 'markup',
                 html: buildDetailHtml(pair, entry, Date.now()),
