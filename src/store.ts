@@ -245,6 +245,7 @@ type State = {
   /** Live forex prices, keyed by pair (e.g. "EUR_USD"). Empty until the
    *  first successful poll — the ticker only renders once this is non-empty. */
   forex: Record<string, ForexPriceEntry>
+  // Baseline is per-session by design (resets on page reload); no reset action planned until phase 3 adds real history.
   setForexPrices: (raw: RawPrices) => void
 
   setVoice: (v: string) => void
