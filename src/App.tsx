@@ -31,6 +31,7 @@ import {
 } from './lib/brain'
 import { startAnalyser, micLevel } from './lib/audio'
 import { probeCapabilities } from './lib/capabilities'
+import { startForexPolling } from './lib/forexTicker'
 import { env } from './config'
 
 /**
@@ -526,6 +527,14 @@ export default function App() {
 
     store.getState().setPhase('dormant')
   }
+
+  // Forex prices poll independently of the voice/power state — the ticker is
+  // a passive HUD readout, not something the wake word gates.
+  useEffect(() => {
+    const stop = startForexPolling((prices) => store.getState().setForexPrices(prices))
+    return stop
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // -- clap to start --------------------------------------------------------
 

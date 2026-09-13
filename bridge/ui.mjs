@@ -274,6 +274,7 @@ const chromeSchema = {
   tool_badge: looseBool('The active-tool readout under the reactor.'),
   suggestions: looseBool('The "try saying…" hint.'),
   brand: looseBool('The J.A.R.V.I.S. wordmark and status line.'),
+  ticker: looseBool('The forex price ticker along the top of the display.'),
 }
 
 const CHROME_DESCRIPTION = `Show or hide the furniture around the display.
@@ -447,6 +448,7 @@ export function uiServer(emit) {
         put(chrome, 'toolBadge', toBool(args.tool_badge))
         put(chrome, 'suggestions', toBool(args.suggestions))
         put(chrome, 'brand', toBool(args.brand))
+        put(chrome, 'ticker', toBool(args.ticker))
 
         if (!has(chrome)) return ok('No change — nothing was named.')
         emit('patch', { chrome })
