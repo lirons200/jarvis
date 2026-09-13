@@ -521,11 +521,14 @@ kbd {
 
 .forex-ticker {
   position: absolute;
-  top: 14px;
+  top: 58px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 8px;
+  max-width: min(90vw, 480px);
   z-index: 5;
 }
 
