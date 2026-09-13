@@ -233,6 +233,12 @@ Everything is optional in bridge mode. Frontend settings live in `.env.local`
 | `JARVIS_FILE_ROOTS` | — | Roots the `/file` endpoint may serve from |
 | `JARVIS_VOICE_ID` | — | ElevenLabs voice id |
 | `ELEVENLABS_API_KEY` | — | Optional; enables the ElevenLabs voice + Scribe |
+| `JARVIS_OANDA_API_KEY` | — | OANDA personal access token. Unset disables the forex feed entirely. |
+| `JARVIS_OANDA_ACCOUNT_ID` | — | OANDA account id. Unset disables the forex feed entirely. |
+| `JARVIS_OANDA_ENV` | `practice` | `practice` or `live`. `live` also requires `JARVIS_OANDA_ALLOW_LIVE=true`. |
+| `JARVIS_OANDA_ALLOW_LIVE` | unset | Must be `true` for `JARVIS_OANDA_ENV=live` to start — a safety rail against accidentally polling a real-money account. |
+| `JARVIS_FOREX_PAIRS` | `EUR_USD,GBP_USD,USD_JPY` | Comma-separated OANDA instrument names to poll. |
+| `JARVIS_FOREX_POLL_INTERVAL_MS` | `10000` | Poll interval, clamped to 2000-60000ms. |
 
 ### Frontend (`.env.local`)
 

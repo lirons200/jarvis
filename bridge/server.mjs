@@ -19,6 +19,7 @@ import { WebSocketServer } from 'ws'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { displayServer } from './panels.mjs'
 import { uiServer } from './ui.mjs'
+import { forexServer, forexRoute, initForex } from './forex.mjs'
 import { chromeAvailable, chromeServer } from './chrome.mjs'
 import { visionServer } from './vision.mjs'
 import { homedir, tmpdir } from 'node:os'
@@ -278,6 +279,10 @@ function decideTool(name) {
     // and the real gate is the browser's own camera permission plus an
     // indicator the user can see for as long as it is live.
     if (server === 'jarvis_eyes') return true
+
+    // Cached price lookups. Read-only: the poller is the only thing that
+    // ever calls OANDA, this tool only reads what it already fetched.
+    if (server === 'jarvis_forex') return true
 
     const tool = mcpToolOf(name)
     if (EFFECTFUL_VERB.test(tool) && !VETO_EXEMPT.has(`${server}__${tool}`)) {
@@ -662,6 +667,8 @@ function corsFor(req) {
 // One HTTP server for both the speech proxy and the WebSocket upgrade.
 const http = await import('node:http')
 
+const FOREX_CONFIG = await initForex()
+
 const handleRequest = async (req, res) => {
   const origin = req.headers.origin
   if (origin && !originAllowed(origin)) {
@@ -685,6 +692,10 @@ const handleRequest = async (req, res) => {
     const eleven = Boolean(elevenKey())
     res.writeHead(200, { ...cors, 'content-type': 'application/json' })
     return res.end(JSON.stringify({ ok: true, tts: eleven, stt: eleven }))
+  }
+
+  if (req.method === 'GET' && req.url === '/forex/prices') {
+    return forexRoute(req, res, cors)
   }
 
   // Serve local image files to the page. Screenshots and generated art land on
@@ -1022,6 +1033,12 @@ void chromeAvailable().then((ok) => {
 })
 
 console.log(
+  FOREX_CONFIG
+    ? `[jarvis] forex feed active`
+    : '[jarvis] forex feed disabled — set JARVIS_OANDA_API_KEY and JARVIS_OANDA_ACCOUNT_ID to enable',
+)
+
+console.log(
   '[jarvis] accepting local dev origins' +
     (EXTRA_ORIGINS.size ? ` plus ${[...EXTRA_ORIGINS].join(', ')}` : '') +
     (ALLOW_NO_ORIGIN ? ' and clients that send no origin' : ''),
@@ -1208,6 +1225,7 @@ wss.on('connection', (socket) => {
         // one server; the underscore in it is why decideTool and announceTool
         // both name `jarvis_ui` explicitly.
         jarvis_ui: uiServer((op, args) => send({ type: 'ui', op, args })),
+        jarvis_forex: forexServer(),
         // The user's own Chrome, over the extension's native-host socket. It
         // holds no per-connection state, but it is built here with the rest so
         // the write gate is read once, at the same point as everything else.
