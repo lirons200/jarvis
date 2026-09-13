@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { ForexPriceEntry, RawPrices } from './lib/forexTicker'
 
 export type Phase =
   | 'offline'   // waiting for the click that unlocks audio
@@ -139,6 +140,7 @@ export type UiState = {
     toolBadge: boolean    // the active-tool readout under the reactor
     suggestions: boolean  // the "try saying…" hint
     brand: boolean        // the J.A.R.V.I.S. wordmark + status
+    ticker: boolean       // the forex price ticker
   }
   effect: UiEffect | null
 }
@@ -147,7 +149,7 @@ export const UI_DEFAULTS: UiState = {
   accent: null, background: null, palette: {},
   reactor: { color: null, scale: 1, intensity: 1, spin: 1, style: 'ring', visible: true },
   orbits: [],
-  chrome: { systems: true, transcript: true, toolBadge: true, suggestions: true, brand: true },
+  chrome: { systems: true, transcript: true, toolBadge: true, suggestions: true, brand: true, ticker: true },
   effect: null,
 }
 
@@ -240,6 +242,10 @@ type State = {
   expandedBlade: string | null
   /** JARVIS's control over his own appearance. UI_DEFAULTS == the stock look. */
   ui: UiState
+  /** Live forex prices, keyed by pair (e.g. "EUR_USD"). Empty until the
+   *  first successful poll — the ticker only renders once this is non-empty. */
+  forex: Record<string, ForexPriceEntry>
+  setForexPrices: (raw: RawPrices) => void
 
   setVoice: (v: string) => void
   setGestures: (on: boolean) => void
@@ -287,6 +293,7 @@ export const useStore = create<State>((set) => ({
   expandedBlade: null,
   bootNote: '',
   ui: defaultUi(),
+  forex: {},
 
   setVoice: (voice) => set({ voice }),
   setGestures: (gestures) => set({ gestures }),
@@ -396,6 +403,19 @@ export const useStore = create<State>((set) => ({
   fireEffect: (kind) =>
     set((s) => ({ ui: { ...s.ui, effect: { kind, at: Date.now() } } })),
   resetUi: () => set({ ui: defaultUi() }),
+  // Captures each pair's baseline the first time it's ever seen this
+  // session, and never overwrites it afterward — that's what "change since
+  // session start" means. Existing baselines are carried forward from the
+  // previous state on every poll.
+  setForexPrices: (raw) =>
+    set((s) => {
+      const next: State['forex'] = {}
+      for (const [pair, entry] of Object.entries(raw)) {
+        const baseline = s.forex[pair]?.baseline ?? entry.bid
+        next[pair] = { ...entry, baseline }
+      }
+      return { forex: next }
+    }),
   // An explicit order outranks the sticky flag. `hold: 'sticky'` only ever
   // meant "survive the next turn boundary"; when someone says "clear the
   // screen", a card staying up because an earlier turn asked nicely reads as
