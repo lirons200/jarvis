@@ -96,6 +96,7 @@ export function startForexPolling(
   intervalMs = 5000,
 ): () => void {
   let stopped = false
+  let timer: ReturnType<typeof setTimeout> | undefined
 
   const tick = async () => {
     try {
@@ -109,12 +110,13 @@ export function startForexPolling(
     } catch {
       // Bridge unreachable or forex disabled — leave the store as it is.
     } finally {
-      if (!stopped) setTimeout(tick, intervalMs)
+      if (!stopped) timer = setTimeout(tick, intervalMs)
     }
   }
 
   void tick()
   return () => {
     stopped = true
+    clearTimeout(timer)
   }
 }

@@ -1,36 +1,7 @@
-import { test } from 'node:test'
+import { test, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'fs'
-import { join, dirname } from 'path'
-import { fileURLToPath } from 'url'
-import { computeDirection, formatRelativeTime, buildDetailHtml } from './forexTicker'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-
-/**
- * Extract ALLOWED_CLASSES from sanitise.ts source code to ensure drift detection.
- * This reads the actual source file and parses the Set definition, avoiding import
- * issues with Vite env variables in the test environment.
- */
-function parseAllowedClassesFromSource(): Set<string> {
-  const sanitisePath = join(__dirname, '../ui/sanitise.ts')
-  const source = readFileSync(sanitisePath, 'utf-8')
-
-  // Match the ALLOWED_CLASSES = new Set([...]) definition
-  const match = source.match(/export const ALLOWED_CLASSES = new Set\(\[([\s\S]*?)\]\)/)
-  if (!match) {
-    throw new Error('Could not find ALLOWED_CLASSES definition in sanitise.ts')
-  }
-
-  // Extract the class names from the Set definition
-  const classesStr = match[1]
-  const classMatches = classesStr.match(/'([^']+)'/g)
-  if (!classMatches) {
-    throw new Error('Could not parse class names from ALLOWED_CLASSES')
-  }
-
-  return new Set(classMatches.map(m => m.slice(1, -1)))
-}
+import { computeDirection, formatRelativeTime, buildDetailHtml, startForexPolling } from './forexTicker'
+import { ALLOWED_CLASSES } from '../ui/sanitise'
 
 test('computeDirection reports up when the bid rose above the baseline', () => {
   assert.equal(computeDirection(1.15, 1.1), 'up')
@@ -89,7 +60,7 @@ test('computeDirection returns neutral when bid is null', () => {
 })
 
 test('buildDetailHtml uses only allowed class names', () => {
-  const allowedClasses = parseAllowedClassesFromSource()
+  const allowedClasses = ALLOWED_CLASSES
 
   const html = buildDetailHtml('EUR_USD', {
     bid: 1.13015,
@@ -116,4 +87,33 @@ test('buildDetailHtml uses only allowed class names', () => {
       `Class "${c}" used in buildDetailHtml but not in ALLOWED_CLASSES`,
     )
   })
+})
+
+test('startForexPolling reschedules after onUpdate throws', async () => {
+  const originalFetch = globalThis.fetch
+  let callCount = 0
+  const fetchMock = mock.fn(async () => {
+    callCount++
+    return {
+      ok: true,
+      json: async () => ({ prices: {} }),
+    } as Response
+  })
+  globalThis.fetch = fetchMock as unknown as typeof fetch
+
+  let updateCount = 0
+  const stop = startForexPolling(() => {
+    updateCount++
+    if (updateCount === 1) throw new Error('boom')
+  }, 20)
+
+  try {
+    // Give the poller time to hit the first (throwing) update and reschedule
+    // for at least one more tick.
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.ok(callCount >= 2, `expected at least 2 fetch calls, got ${callCount}`)
+  } finally {
+    stop()
+    globalThis.fetch = originalFetch
+  }
 })

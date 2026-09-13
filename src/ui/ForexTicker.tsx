@@ -17,7 +17,7 @@ export function ForexTicker() {
     <div className="forex-ticker">
       {pairs.map((pair) => {
         const entry = forex[pair]
-        const direction = computeDirection(entry.bid, entry.baseline)
+        const direction = entry.tradeable ? computeDirection(entry.bid, entry.baseline) : 'neutral'
         const arrow = direction === 'up' ? '▲' : direction === 'down' ? '▼' : ''
         const label = pair.replace('_', '/')
 

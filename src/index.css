@@ -543,6 +543,7 @@ kbd {
   font: 500 11px/1.4 ui-monospace, monospace;
   color: var(--accent, #7fdcee);
   cursor: pointer;
+  pointer-events: auto;
 }
 
 .forex-chip-pair { opacity: 0.7; }
