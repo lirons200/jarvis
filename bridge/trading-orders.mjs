@@ -13,7 +13,17 @@
  * never treat a successful HTTP status alone as "the trade happened".
  */
 export function parseOrderResponse(json) {
-  if (json?.orderFillTransaction) {
+  const hasFill = Boolean(json?.orderFillTransaction)
+  const hasCancel = Boolean(json?.orderCancelTransaction)
+  const hasReject = Boolean(json?.orderRejectTransaction)
+
+  if (hasFill && (hasCancel || hasReject)) {
+    // Contradictory response — never resolve this in favor of "filled".
+    // A confirmed fill must be unambiguous, not just present alongside
+    // conflicting evidence.
+    return { filled: false, reason: 'ambiguous response (both fill and cancel/reject present)' }
+  }
+  if (hasFill) {
     const t = json.orderFillTransaction
     return {
       filled: true,
@@ -21,10 +31,10 @@ export function parseOrderResponse(json) {
       tradeId: t.tradeOpened?.tradeID ?? null,
     }
   }
-  if (json?.orderCancelTransaction) {
+  if (hasCancel) {
     return { filled: false, reason: json.orderCancelTransaction.reason ?? 'cancelled' }
   }
-  if (json?.orderRejectTransaction) {
+  if (hasReject) {
     return { filled: false, reason: json.orderRejectTransaction.rejectReason ?? 'rejected' }
   }
   return { filled: false, reason: 'unknown response shape' }
@@ -37,6 +47,9 @@ export function parseOrderResponse(json) {
  * never hard-coded per pair.
  */
 export function formatStopPrice(price, precision) {
+  if (!Number.isFinite(price)) {
+    throw new Error(`formatStopPrice: price must be a finite number, got ${price}`)
+  }
   return price.toFixed(precision)
 }
 

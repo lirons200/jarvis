@@ -40,6 +40,21 @@ test('formatStopPrice rounds to the given instrument precision', () => {
   assert.equal(formatStopPrice(147.29999, 3), '147.300')
 })
 
+test('parseOrderResponse treats an ambiguous response (fill + reject) as not filled', () => {
+  const json = {
+    orderFillTransaction: { price: '1.1', tradeOpened: { tradeID: '1' } },
+    orderRejectTransaction: { rejectReason: 'SOMETHING' },
+  }
+  const result = parseOrderResponse(json)
+  assert.equal(result.filled, false)
+  assert.match(result.reason, /ambiguous/)
+})
+
+test('formatStopPrice throws on a non-finite price', () => {
+  assert.throws(() => formatStopPrice(NaN, 5))
+  assert.throws(() => formatStopPrice(Infinity, 5))
+})
+
 test('buildClientOrderId is deterministic for the same pair and signal date', () => {
   const a = buildClientOrderId('EUR_USD', '2026-01-04T00:00:00Z')
   const b = buildClientOrderId('EUR_USD', '2026-01-04T00:00:00Z')
