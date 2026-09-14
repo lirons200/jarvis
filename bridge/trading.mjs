@@ -87,13 +87,17 @@ export function reconcileOpenPositions(openPositions, configuredPairs, hasStopLo
   const unexpectedShorts = []
 
   for (const [pair, position] of Object.entries(openPositions)) {
-    if (position.shortUnits !== 0) unexpectedShorts.push(pair)
-    if (position.longUnits === 0) continue
+    const hasShort = position.shortUnits !== 0
+    const hasLong = position.longUnits !== 0
+    if (hasShort) unexpectedShorts.push(pair)
+    if (!hasLong && !hasShort) continue
+
     if (!configured.has(pair)) {
       unexpected.push(pair)
       continue
     }
-    if (!hasStopLoss[pair]) missingStopLoss.push(pair)
+
+    if (hasLong && !hasStopLoss[pair]) missingStopLoss.push(pair)
   }
 
   return { unexpected, missingStopLoss, unexpectedShorts }

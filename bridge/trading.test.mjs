@@ -94,3 +94,10 @@ test('reconcileOpenPositions flags an unexpected short position regardless of th
   const result = reconcileOpenPositions(openPositions, ['EUR_USD'], { EUR_USD: true })
   assert.deepEqual(result.unexpectedShorts, ['EUR_USD'])
 })
+
+test('reconcileOpenPositions flags a short-only position in an unconfigured pair as both unexpected and unexpectedShorts', () => {
+  const openPositions = { EUR_JPY: { longUnits: 0, shortUnits: 500 } }
+  const result = reconcileOpenPositions(openPositions, ['EUR_USD'], {})
+  assert.deepEqual(result.unexpected, ['EUR_JPY'])
+  assert.deepEqual(result.unexpectedShorts, ['EUR_JPY'])
+})
