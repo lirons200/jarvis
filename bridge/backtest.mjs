@@ -75,3 +75,59 @@ export async function fetchCandlesOnce({ host, accountId, apiKey, pair, granular
   const json = await readJsonBody(res, MAX_RESPONSE_BYTES)
   return parseCandles(json)
 }
+
+function sma(values, period, index) {
+  if (index < period - 1) return null
+  let sum = 0
+  for (let i = index - period + 1; i <= index; i++) sum += values[i]
+  return sum / period
+}
+
+/**
+ * Long-only, one position at a time. Buys when the fast SMA crosses above
+ * the slow SMA, closes when it crosses back below. A buy signal while
+ * already positioned is ignored, as is a close signal while flat. An
+ * un-closed position at the end of the series is dropped, not reported as
+ * a trade — it never realised a P&L.
+ *
+ * A pure function (candles in, trades out) on purpose, so a second strategy
+ * can be added later as a sibling function without touching this one or the
+ * engine around it.
+ */
+export function movingAverageCrossoverStrategy(candles, { fastPeriod = 10, slowPeriod = 30 } = {}) {
+  const closes = candles.map((c) => c.close)
+  const trades = []
+  let position = null
+  let prevFast = null
+  let prevSlow = null
+
+  for (let i = 0; i < candles.length; i++) {
+    const fast = sma(closes, fastPeriod, i)
+    const slow = sma(closes, slowPeriod, i)
+
+    if (fast !== null && slow !== null && prevFast !== null && prevSlow !== null) {
+      const crossedUp = prevFast <= prevSlow && fast > slow
+      const crossedDown = prevFast >= prevSlow && fast < slow
+
+      if (crossedUp && !position) {
+        position = { entryTime: candles[i].time, entryPrice: candles[i].close }
+      } else if (crossedDown && position) {
+        trades.push({
+          entryTime: position.entryTime,
+          entryPrice: position.entryPrice,
+          exitTime: candles[i].time,
+          exitPrice: candles[i].close,
+          pnl: candles[i].close - position.entryPrice,
+        })
+        position = null
+      }
+    }
+
+    if (fast !== null && slow !== null) {
+      prevFast = fast
+      prevSlow = slow
+    }
+  }
+
+  return trades
+}
