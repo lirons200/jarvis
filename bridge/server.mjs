@@ -1024,17 +1024,6 @@ const wss = new WebSocketServer({
 })
 server.listen(PORT)
 
-const TRADING_CONFIG = await initTrading((text) => {
-  // Pushed to every currently-connected client. If none is connected the
-  // announcement is simply not spoken — the journal (see trading.mjs) is
-  // the actual record, so nothing is lost, only the spoken convenience.
-  for (const client of wss.clients) {
-    if (client.readyState === client.OPEN) {
-      client.send(JSON.stringify({ type: 'announce', text }))
-    }
-  }
-})
-
 console.log(`[jarvis] bridge listening on ws://localhost:${PORT}`)
 console.log(
   `[jarvis] speech ${elevenKey() ? 'via ElevenLabs (key from MCP config)' : 'using browser fallback voice'}`,
@@ -1060,12 +1049,6 @@ console.log(
   FOREX_CONFIG
     ? `[jarvis] forex feed active`
     : '[jarvis] forex feed disabled — set JARVIS_OANDA_API_KEY and JARVIS_OANDA_ACCOUNT_ID to enable',
-)
-
-console.log(
-  TRADING_CONFIG
-    ? `[jarvis] trading active`
-    : '[jarvis] trading disabled — set JARVIS_TRADING_ENABLED=true and JARVIS_TRADING_ARM=true to enable',
 )
 
 console.log(
@@ -1512,3 +1495,30 @@ wss.on('connection', (socket) => {
     session.close?.()
   })
 })
+
+// Started only after wss.on('connection', ...) above is registered, so the
+// handler that processes an incoming socket is always live before this slow
+// async call (OANDA boot reconciliation) begins. Started any earlier, a
+// client connecting during the await would fire 'connection' with no
+// listener attached, and the event — Node's plain EventEmitter doesn't queue
+// past emissions — would be silently lost.
+const TRADING_CONFIG = await initTrading((text) => {
+  // Pushed to every currently-connected client. If none is connected the
+  // announcement is simply not spoken — the journal (see trading.mjs) is
+  // the actual record, so nothing is lost, only the spoken convenience.
+  for (const client of wss.clients) {
+    if (client.readyState === client.OPEN) {
+      try {
+        client.send(JSON.stringify({ type: 'announce', text }))
+      } catch (err) {
+        console.error(`[jarvis:trading] could not send announcement to a client: ${err.message}`)
+      }
+    }
+  }
+})
+
+console.log(
+  TRADING_CONFIG
+    ? `[jarvis] trading active`
+    : '[jarvis] trading disabled — set JARVIS_TRADING_ENABLED=true and JARVIS_TRADING_ARM=true to enable',
+)
