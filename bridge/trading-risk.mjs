@@ -37,6 +37,9 @@ export function computeATR(candles, period = 14) {
 
 /** Long-only: the stop always sits below entry, by ATR × multiplier. */
 export function computeStopLossPrice(entryPrice, atr, multiplier) {
+  if (!Number.isFinite(atr) || atr <= 0) {
+    throw new Error(`computeStopLossPrice: atr must be a positive finite number, got ${atr}`)
+  }
   return entryPrice - atr * multiplier
 }
 
@@ -63,5 +66,14 @@ export function checkTotalExposure(currentTotalUnits, newUnits, maxTotalUnits) {
  * this function exists to guard against by taking pre-converted numbers.
  */
 export function checkDailyLossHalt(realizedPL, unrealizedPL, maxDailyLoss) {
+  if (!Number.isFinite(realizedPL) || !Number.isFinite(unrealizedPL)) {
+    // Malformed P&L data is exactly the situation this safety gate exists
+    // for — fail CLOSED (halt) rather than silently continuing to trade on
+    // garbage numbers. The opposite of the entry-gate checks in this file,
+    // which correctly fail closed by rejecting (false) on NaN input; here
+    // "false" means "don't halt", so the safe direction on bad data is the
+    // other way.
+    return true
+  }
   return realizedPL + unrealizedPL <= -Math.abs(maxDailyLoss)
 }

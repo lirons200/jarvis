@@ -77,3 +77,15 @@ test('checkDailyLossHalt triggers once realized+unrealized P&L breaches the nega
   // profit -> never halted regardless of magnitude
   assert.equal(checkDailyLossHalt(10000, 0, 5000), false)
 })
+
+test('checkDailyLossHalt fails closed (halts) if P&L input is not a finite number', () => {
+  assert.equal(checkDailyLossHalt(NaN, -100, 5000), true)
+  assert.equal(checkDailyLossHalt(-100, NaN, 5000), true)
+  assert.equal(checkDailyLossHalt(Infinity, -100, 5000), true)
+})
+
+test('computeStopLossPrice throws on a non-positive or non-finite atr', () => {
+  assert.throws(() => computeStopLossPrice(1.1, 0, 2))
+  assert.throws(() => computeStopLossPrice(1.1, -0.002, 2))
+  assert.throws(() => computeStopLossPrice(1.1, NaN, 2))
+})
