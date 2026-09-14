@@ -25,10 +25,12 @@ export function trueRange(candles, i) {
  * first cut; revisit only if live use shows it under/over-reacts.
  */
 export function computeATR(candles, period = 14) {
+  if (!Number.isInteger(period) || period <= 0) return null
   if (candles.length < period) return null
   let sum = 0
   for (let i = candles.length - period; i < candles.length; i++) {
     sum += trueRange(candles, i)
   }
-  return sum / period
+  const result = sum / period
+  return Number.isFinite(result) ? result : null
 }

@@ -36,3 +36,20 @@ test('computeATR returns null when there is not enough history', () => {
   const candles = Array.from({ length: 2 }, () => ({ high: 1.11, low: 1.10, close: 1.105 }))
   assert.equal(computeATR(candles, 14), null)
 })
+
+test('computeATR returns null for a non-positive or non-integer period', () => {
+  const candles = Array.from({ length: 5 }, () => ({ high: 1.11, low: 1.10, close: 1.105 }))
+  assert.equal(computeATR(candles, 0), null)
+  assert.equal(computeATR(candles, -3), null)
+  assert.equal(computeATR(candles, 2.5), null)
+})
+
+test('computeATR returns null rather than NaN when a candle is missing high/low/close', () => {
+  const candles = [
+    { high: 1.11, low: 1.10, close: 1.105 },
+    { high: 1.11, low: 1.10, close: 1.105 },
+    {}, // malformed — missing all fields
+  ]
+  const result = computeATR(candles, 3)
+  assert.equal(result, null)
+})
