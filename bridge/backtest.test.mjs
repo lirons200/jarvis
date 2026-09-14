@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseCandles, movingAverageCrossoverStrategy } from './backtest.mjs'
+import { parseCandles, movingAverageCrossoverStrategy, computeStats } from './backtest.mjs'
 
 test('parseCandles extracts OHLC from mid prices and drops incomplete candles', () => {
   const json = {
@@ -51,4 +51,37 @@ test('movingAverageCrossoverStrategy leaves an unclosed position out of the trad
   }))
   const trades = movingAverageCrossoverStrategy(candles, { fastPeriod: 2, slowPeriod: 3 })
   assert.deepEqual(trades, [])
+})
+
+test('computeStats computes return/win-rate/drawdown from a trade list', () => {
+  const stats = computeStats([{ pnl: -2 }], 10000)
+  assert.equal(stats.tradeCount, 1)
+  assert.equal(stats.winRatePct, 0)
+  assert.ok(Math.abs(stats.totalReturnPct - -0.02) < 1e-9)
+  assert.ok(Math.abs(stats.maxDrawdownPct - 0.02) < 1e-9)
+  assert.equal(stats.endingBalance, 9998)
+})
+
+test('computeStats reports a 100% win rate and zero drawdown for an all-winning sequence', () => {
+  const stats = computeStats([{ pnl: 100 }, { pnl: 50 }], 1000)
+  assert.equal(stats.winRatePct, 100)
+  assert.equal(stats.maxDrawdownPct, 0)
+  assert.equal(stats.endingBalance, 1150)
+})
+
+test('computeStats returns zeroed stats for an empty trade list', () => {
+  const stats = computeStats([], 1000)
+  assert.deepEqual(stats, {
+    tradeCount: 0,
+    totalReturnPct: 0,
+    winRatePct: 0,
+    maxDrawdownPct: 0,
+    endingBalance: 1000,
+  })
+})
+
+test('computeStats tracks drawdown across a rise then a fall, not just the final balance', () => {
+  // Balance goes 1000 -> 1200 (peak) -> 1100 (150 down from peak, not from start).
+  const stats = computeStats([{ pnl: 200 }, { pnl: -100 }], 1000)
+  assert.ok(Math.abs(stats.maxDrawdownPct - (100 / 1200) * 100) < 1e-9)
 })

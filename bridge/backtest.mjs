@@ -133,3 +133,32 @@ export function movingAverageCrossoverStrategy(candles, { fastPeriod = 10, slowP
 
   return trades
 }
+
+/**
+ * Summary performance stats from a completed trade list. Drawdown is
+ * tracked against the running peak balance, not the starting balance — a
+ * strategy that goes up 20% then down 10% has a 10%-of-peak drawdown, not a
+ * misleading "still up overall" figure.
+ */
+export function computeStats(trades, startingBalance = 10000) {
+  let balance = startingBalance
+  let peak = startingBalance
+  let maxDrawdown = 0
+  let wins = 0
+
+  for (const t of trades) {
+    balance += t.pnl
+    if (balance > peak) peak = balance
+    const drawdown = (peak - balance) / peak
+    if (drawdown > maxDrawdown) maxDrawdown = drawdown
+    if (t.pnl > 0) wins++
+  }
+
+  return {
+    tradeCount: trades.length,
+    totalReturnPct: ((balance - startingBalance) / startingBalance) * 100,
+    winRatePct: trades.length ? (wins / trades.length) * 100 : 0,
+    maxDrawdownPct: maxDrawdown * 100,
+    endingBalance: balance,
+  }
+}
