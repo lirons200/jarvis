@@ -42,3 +42,29 @@ test('readJournalTail returns an empty array if the file does not exist yet', as
   const tail = await readJournalTail(join(dir, 'nope.jsonl'), 5)
   assert.deepEqual(tail, [])
 })
+
+test('appendJournalEntry serializes concurrent writes to the same path without corrupting lines', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'jarvis-journal-'))
+  const path = join(dir, 'journal.jsonl')
+  await Promise.all(
+    Array.from({ length: 20 }, (_, i) => appendJournalEntry(path, { pair: 'EUR_USD', event: 'enter', units: i })),
+  )
+  const content = await readFile(path, 'utf8')
+  const lines = content.trim().split('\n')
+  assert.equal(lines.length, 20)
+  // Every line must be independently valid JSON — a corrupted/interleaved
+  // write would produce a line that fails to parse.
+  const parsed = lines.map((l) => JSON.parse(l))
+  const units = parsed.map((e) => e.units).sort((a, b) => a - b)
+  assert.deepEqual(units, Array.from({ length: 20 }, (_, i) => i))
+})
+
+test('appendJournalEntry never lets a caller override the real timestamp', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'jarvis-journal-'))
+  const path = join(dir, 'journal.jsonl')
+  await appendJournalEntry(path, { pair: 'EUR_USD', event: 'enter', at: '1999-01-01T00:00:00Z' })
+  const content = await readFile(path, 'utf8')
+  const entry = JSON.parse(content.trim())
+  assert.notEqual(entry.at, '1999-01-01T00:00:00Z')
+  assert.ok(new Date(entry.at).getTime() > Date.now() - 60_000) // within the last minute
+})
