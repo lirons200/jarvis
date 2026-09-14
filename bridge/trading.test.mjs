@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { appendJournalEntry, readJournalTail } from './trading.mjs'
+import { appendJournalEntry, readJournalTail, reconcileOpenPositions } from './trading.mjs'
 
 test('appendJournalEntry writes one JSON line per call', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'jarvis-journal-'))
@@ -67,4 +67,30 @@ test('appendJournalEntry never lets a caller override the real timestamp', async
   const entry = JSON.parse(content.trim())
   assert.notEqual(entry.at, '1999-01-01T00:00:00Z')
   assert.ok(new Date(entry.at).getTime() > Date.now() - 60_000) // within the last minute
+})
+
+test('reconcileOpenPositions reports no findings when open positions match the configured set exactly', () => {
+  const openPositions = { EUR_USD: { longUnits: 1000, shortUnits: 0 } }
+  const result = reconcileOpenPositions(openPositions, ['EUR_USD'], { EUR_USD: true })
+  assert.deepEqual(result.unexpected, [])
+  assert.deepEqual(result.missingStopLoss, [])
+})
+
+test('reconcileOpenPositions flags a position for a pair not in the configured list', () => {
+  const openPositions = { USD_JPY: { longUnits: 500, shortUnits: 0 } }
+  const result = reconcileOpenPositions(openPositions, ['EUR_USD'], { USD_JPY: true })
+  assert.deepEqual(result.unexpected, ['USD_JPY'])
+})
+
+test('reconcileOpenPositions flags a configured-pair position with no known stop-loss', () => {
+  const openPositions = { EUR_USD: { longUnits: 1000, shortUnits: 0 } }
+  // hasStopLoss map says false (or the pair is simply absent from it)
+  const result = reconcileOpenPositions(openPositions, ['EUR_USD'], {})
+  assert.deepEqual(result.missingStopLoss, ['EUR_USD'])
+})
+
+test('reconcileOpenPositions flags an unexpected short position regardless of the long-only strategy', () => {
+  const openPositions = { EUR_USD: { longUnits: 0, shortUnits: 500 } }
+  const result = reconcileOpenPositions(openPositions, ['EUR_USD'], { EUR_USD: true })
+  assert.deepEqual(result.unexpectedShorts, ['EUR_USD'])
 })

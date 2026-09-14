@@ -66,3 +66,35 @@ export async function readJournalTail(path, n) {
   }
   return parsed.slice(-n)
 }
+
+/**
+ * Run once at boot, before the poller starts, against OANDA's real open
+ * positions — never trust an assumption about what should be open. Three
+ * findings, each requiring a different response from the caller:
+ *   - unexpected: a position for a pair not in JARVIS_TRADING_PAIRS.
+ *     Adopted in monitor-only mode by the caller, never re-entered.
+ *   - missingStopLoss: a configured pair's position with no confirmed
+ *     stop-loss (from a prior fill's tradeId, tracked by the caller in
+ *     `hasStopLoss`). Logged as a loud warning requiring manual attention.
+ *   - unexpectedShorts: any short exposure at all, since the strategy is
+ *     long-only — closeLongPosition would never touch this, so it must be
+ *     surfaced rather than silently ignored.
+ */
+export function reconcileOpenPositions(openPositions, configuredPairs, hasStopLoss) {
+  const configured = new Set(configuredPairs)
+  const unexpected = []
+  const missingStopLoss = []
+  const unexpectedShorts = []
+
+  for (const [pair, position] of Object.entries(openPositions)) {
+    if (position.shortUnits !== 0) unexpectedShorts.push(pair)
+    if (position.longUnits === 0) continue
+    if (!configured.has(pair)) {
+      unexpected.push(pair)
+      continue
+    }
+    if (!hasStopLoss[pair]) missingStopLoss.push(pair)
+  }
+
+  return { unexpected, missingStopLoss, unexpectedShorts }
+}
