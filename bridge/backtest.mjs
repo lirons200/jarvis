@@ -244,6 +244,13 @@ export function backtestServer() {
           }
 
           const stats = computeStats(trades)
+          const MAX_TRADES_SHOWN = 50
+          const omitted = Math.max(0, trades.length - MAX_TRADES_SHOWN)
+          const shownTrades = trades.slice(omitted)
+          const tradesHeader =
+            omitted > 0
+              ? `Trades (showing the most recent ${shownTrades.length} of ${trades.length}):\n`
+              : `Trades:\n`
           return ok(
             `Backtested ${pair} over ${candles.length} daily candles ` +
               `(${fastPeriod}/${slowPeriod}-day MA crossover):\n` +
@@ -251,7 +258,7 @@ export function backtestServer() {
               `Win rate: ${stats.winRatePct.toFixed(1)}%\n` +
               `Total return: ${stats.totalReturnPct.toFixed(2)}%\n` +
               `Max drawdown: ${stats.maxDrawdownPct.toFixed(2)}%\n\n` +
-              `Trades:\n${trades.map(formatTrade).join('\n')}`,
+              `${tradesHeader}${shownTrades.map((t, i) => formatTrade(t, i + omitted)).join('\n')}`,
           )
         },
       ),
