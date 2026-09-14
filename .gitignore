@@ -28,3 +28,4 @@ public/mediapipe/
 
 # Scratch mockups from superpowers:brainstorming's visual companion.
 .superpowers/
+bridge/data/*.jsonl

@@ -102,3 +102,229 @@ export function reconcileOpenPositions(openPositions, configuredPairs, hasStopLo
 
   return { unexpected, missingStopLoss, unexpectedShorts }
 }
+
+import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
+import { z } from 'zod'
+import { resolveEnv, hostFor } from './forex.mjs'
+import { fetchCandlesOnce } from './backtest.mjs'
+import { detectLiveSignal } from './trading-signal.mjs'
+import { computeATR, computeStopLossPrice, checkPositionSize, checkTotalExposure, checkDailyLossHalt } from './trading-risk.mjs'
+import {
+  fetchInstrumentPrecision, fetchOpenPositions, fetchAccountPL,
+  placeMarketOrder, closeLongPosition, formatStopPrice, buildClientOrderId,
+} from './trading-orders.mjs'
+
+const JOURNAL_PATH = new URL('./data/trading-journal.jsonl', import.meta.url).pathname
+
+const state = {
+  armed: false,
+  halted: false,
+  haltReason: null,
+  polling: false,
+  timer: null,
+  hasStopLoss: {}, // pair -> boolean, tracked from fill confirmations this run
+  onAnnounce: null, // set by initTrading, pushes to the browser
+}
+
+function haltTrading(reason) {
+  state.halted = true
+  state.haltReason = reason
+  console.error(`[jarvis:trading] HALTED — ${reason}`)
+}
+
+async function announce(text) {
+  console.log(`[jarvis:trading] ${text}`)
+  state.onAnnounce?.(text)
+}
+
+/**
+ * One sweep across every configured pair. A single lock for the WHOLE
+ * sweep, not per-pair — a second tick is skipped entirely if the previous
+ * one hasn't finished, matching phase 1's poller philosophy but scoped to
+ * the multi-pair unit of work rather than one fetch.
+ */
+async function pollOnce(config) {
+  if (state.polling || state.halted) return
+  state.polling = true
+  try {
+    const { realizedPL, unrealizedPL } = await fetchAccountPL(config)
+    if (checkDailyLossHalt(realizedPL, unrealizedPL, config.maxDailyLoss)) {
+      haltTrading(`daily loss cap reached (realized ${realizedPL} + unrealized ${unrealizedPL})`)
+      return
+    }
+
+    for (const pair of config.pairs) {
+      const candles = await fetchCandlesOnce({ ...config, pair })
+      if (candles.length < config.slowPeriod + 1) continue
+
+      // Only touch OANDA's real position state when there's a candidate
+      // signal — avoids an API call on every pair on every tick when
+      // nothing changed.
+      const provisionalSignal = detectLiveSignal(candles, null, config)
+      if (provisionalSignal === 'none') continue
+
+      const openPositions = await fetchOpenPositions(config)
+      const currentPosition = openPositions[pair]?.longUnits > 0 ? openPositions[pair] : null
+      const signal = detectLiveSignal(candles, currentPosition, config)
+      if (signal === 'none') continue
+
+      if (signal === 'enter') {
+        const totalOpenUnits = Object.values(openPositions).reduce((sum, p) => sum + p.longUnits, 0)
+        if (!checkPositionSize(config.maxPositionUnits, config.maxPositionUnits)) continue
+        if (!checkTotalExposure(totalOpenUnits, config.maxPositionUnits, config.maxTotalUnits)) {
+          await announce(`Skipped a ${pair} entry — it would exceed the total exposure limit.`)
+          continue
+        }
+
+        const atr = computeATR(candles)
+        if (atr === null) continue
+        const entryPrice = candles[candles.length - 1].close
+        const stopPrice = computeStopLossPrice(entryPrice, atr, config.atrStopMultiplier)
+        const precision = await fetchInstrumentPrecision({ ...config, pair })
+        const clientOrderId = buildClientOrderId(pair, candles[candles.length - 1].time)
+
+        const result = await placeMarketOrder({
+          ...config, pair,
+          units: config.maxPositionUnits,
+          stopLossPrice: formatStopPrice(stopPrice, precision),
+          clientOrderId,
+        })
+
+        await appendJournalEntry(JOURNAL_PATH, { pair, event: 'enter', ...result })
+        if (result.filled) {
+          state.hasStopLoss[pair] = true
+          await announce(`Opened a ${pair} position, ${config.maxPositionUnits} units.`)
+        } else {
+          await announce(`${pair} entry did not fill: ${result.reason}.`)
+        }
+      } else if (signal === 'exit') {
+        const closeResult = await closeLongPosition({ ...config, pair })
+        await appendJournalEntry(JOURNAL_PATH, { pair, event: 'exit', result: closeResult })
+        delete state.hasStopLoss[pair]
+        await announce(`Closed the ${pair} position.`)
+      }
+    }
+  } catch (err) {
+    console.error(`[jarvis:trading] sweep failed: ${err.message}`)
+  } finally {
+    state.polling = false
+  }
+}
+
+function startPoller(config) {
+  const tick = async () => {
+    await pollOnce(config)
+    state.timer = setTimeout(tick, config.pollIntervalMs)
+  }
+  void tick()
+  return () => {
+    if (state.timer) clearTimeout(state.timer)
+  }
+}
+
+/**
+ * Boot-time setup. Trading only starts if JARVIS_TRADING_ENABLED and
+ * JARVIS_TRADING_ARM are both true (checked fresh every boot — the arm
+ * flag is never persisted, so a crash-and-restart always comes up
+ * halted-equivalent unless the person restarting it explicitly sets this
+ * again) and every mandatory risk-limit env var is present.
+ */
+export async function initTrading(onAnnounce) {
+  state.onAnnounce = onAnnounce
+
+  if (process.env.JARVIS_TRADING_ENABLED !== 'true') {
+    console.log('[jarvis:trading] disabled — set JARVIS_TRADING_ENABLED=true to enable')
+    return null
+  }
+  if (process.env.JARVIS_TRADING_ARM !== 'true') {
+    console.error('[jarvis:trading] disabled — JARVIS_TRADING_ARM=true is required at every boot to trade')
+    return null
+  }
+
+  const apiKey = process.env.JARVIS_OANDA_API_KEY
+  const accountId = process.env.JARVIS_OANDA_ACCOUNT_ID
+  const pairsRaw = process.env.JARVIS_TRADING_PAIRS
+  const maxPositionUnits = Number(process.env.JARVIS_TRADING_MAX_POSITION_UNITS)
+  const maxTotalUnits = Number(process.env.JARVIS_TRADING_MAX_TOTAL_UNITS)
+  const maxDailyLoss = Number(process.env.JARVIS_TRADING_MAX_DAILY_LOSS)
+  const atrStopMultiplier = Number(process.env.JARVIS_TRADING_ATR_STOP_MULTIPLIER)
+  const pollIntervalMs = Number(process.env.JARVIS_TRADING_POLL_INTERVAL_MS)
+
+  const missing = []
+  if (!apiKey) missing.push('JARVIS_OANDA_API_KEY')
+  if (!accountId) missing.push('JARVIS_OANDA_ACCOUNT_ID')
+  if (!pairsRaw) missing.push('JARVIS_TRADING_PAIRS')
+  if (!Number.isFinite(maxPositionUnits) || maxPositionUnits <= 0) missing.push('JARVIS_TRADING_MAX_POSITION_UNITS')
+  if (!Number.isFinite(maxTotalUnits) || maxTotalUnits <= 0) missing.push('JARVIS_TRADING_MAX_TOTAL_UNITS')
+  if (!Number.isFinite(maxDailyLoss) || maxDailyLoss <= 0) missing.push('JARVIS_TRADING_MAX_DAILY_LOSS')
+  if (!Number.isFinite(atrStopMultiplier) || atrStopMultiplier <= 0) missing.push('JARVIS_TRADING_ATR_STOP_MULTIPLIER')
+  if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) missing.push('JARVIS_TRADING_POLL_INTERVAL_MS')
+  if (missing.length) {
+    console.error(`[jarvis:trading] disabled — missing required config: ${missing.join(', ')}`)
+    return null
+  }
+
+  let env
+  try {
+    env = resolveEnv()
+  } catch (err) {
+    console.error(`[jarvis:trading] disabled — ${err.message}`)
+    return null
+  }
+
+  const config = {
+    host: hostFor(env), accountId, apiKey,
+    pairs: pairsRaw.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean),
+    fastPeriod: 10, slowPeriod: 30,
+    maxPositionUnits, maxTotalUnits, maxDailyLoss, atrStopMultiplier, pollIntervalMs,
+  }
+
+  const openPositions = await fetchOpenPositions(config)
+  const reconciliation = reconcileOpenPositions(openPositions, config.pairs, state.hasStopLoss)
+  if (reconciliation.unexpected.length) {
+    console.error(`[jarvis:trading] unexpected open positions on boot (adopted, monitor-only): ${reconciliation.unexpected.join(', ')}`)
+  }
+  if (reconciliation.missingStopLoss.length) {
+    console.error(`[jarvis:trading] WARNING — open position(s) with no confirmed stop-loss: ${reconciliation.missingStopLoss.join(', ')}`)
+  }
+  if (reconciliation.unexpectedShorts.length) {
+    console.error(`[jarvis:trading] WARNING — unexpected short exposure (this strategy is long-only): ${reconciliation.unexpectedShorts.join(', ')}`)
+  }
+
+  state.armed = true
+  console.log(`[jarvis:trading] armed — ${env} — pairs ${config.pairs.join(', ')}`)
+  startPoller(config)
+  return config
+}
+
+export function tradingServer() {
+  return createSdkMcpServer({
+    name: 'jarvis_trading',
+    version: '1.0.0',
+    instructions: 'Read-only status for the autonomous forex trading loop.',
+    tools: [
+      tool('trading_status', 'Report whether autonomous trading is armed, halted, and today\'s P&L.', {}, async () => {
+        const tail = await readJournalTail(JOURNAL_PATH, 5)
+        const lines = [
+          state.armed ? (state.halted ? `Halted — ${state.haltReason}` : 'Armed and running') : 'Not armed',
+          `Recent activity: ${tail.length ? tail.map((e) => `${e.pair} ${e.event}`).join(', ') : 'none'}`,
+        ]
+        return { content: [{ type: 'text', text: lines.join('. ') }] }
+      }),
+    ],
+  })
+}
+
+export function tradingControlServer() {
+  return createSdkMcpServer({
+    name: 'jarvis_trading_control',
+    version: '1.0.0',
+    instructions: 'The trading kill-switch. Always available, regardless of write permissions.',
+    tools: [
+      tool('trading_halt', 'Immediately stop autonomous trading. Existing stop-losses stay in place.', {}, async () => {
+        haltTrading('halted by voice command')
+        return { content: [{ type: 'text', text: 'Trading halted. Existing positions keep their stop-losses.' }] }
+      }),
+    ],
+  })
+}
