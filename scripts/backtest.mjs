@@ -12,10 +12,10 @@
 import { fetchCandlesOnce, movingAverageCrossoverStrategy, computeStats } from '../bridge/backtest.mjs'
 import { resolveEnv, hostFor } from '../bridge/forex.mjs'
 
+const PAIR_RE = /^[A-Z]{3}_[A-Z]{3}$/
+
 const [, , pairArg, fastArg, slowArg, countArg] = process.argv
 const pair = (pairArg ?? 'EUR_USD').toUpperCase()
-const fastPeriod = Number(fastArg) || 10
-const slowPeriod = Number(slowArg) || 30
 const count = Number(countArg) || 252
 
 const apiKey = process.env.JARVIS_OANDA_API_KEY
@@ -25,13 +25,33 @@ if (!apiKey || !accountId) {
   process.exit(1)
 }
 
-const env = resolveEnv()
-const candles = await fetchCandlesOnce({ host: hostFor(env), accountId, apiKey, pair, count })
+let env
+try {
+  env = resolveEnv()
+} catch (err) {
+  console.error(`Forex backtesting is not configured — ${err.message}`)
+  process.exit(1)
+}
+
+if (!PAIR_RE.test(pair)) {
+  console.error(`"${pair}" isn't a valid instrument name, e.g. EUR_USD.`)
+  process.exit(1)
+}
+
+let candles
+try {
+  candles = await fetchCandlesOnce({ host: hostFor(env), accountId, apiKey, pair, count })
+} catch (err) {
+  console.error(`Could not fetch historical data for ${pair}: ${err.message}`)
+  process.exit(1)
+}
 if (!candles.length) {
   console.error(`No historical data for ${pair}.`)
   process.exit(1)
 }
 
+const fastPeriod = Math.max(2, Math.round(Number(fastArg) || 10))
+const slowPeriod = Math.max(fastPeriod + 1, Math.round(Number(slowArg) || 30))
 const trades = movingAverageCrossoverStrategy(candles, { fastPeriod, slowPeriod })
 const stats = computeStats(trades)
 
