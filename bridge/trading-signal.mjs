@@ -10,6 +10,10 @@
  * currently open (which must always come from a fresh OANDA query, never
  * from memory), what should happen now" — sharing only the SMA math with
  * the backtest engine, not its trade-replay loop.
+ *
+ * detectLiveSignal enforces, rather than merely documents, that
+ * fastPeriod < slowPeriod and that the candles it reads are strictly
+ * ascending by time — see the guards at the top of the function.
  */
 
 import { sma } from './backtest.mjs'
@@ -20,9 +24,21 @@ import { sma } from './backtest.mjs'
  *   open for this pair (per a fresh OANDA query), null/undefined if flat
  * @param {{fastPeriod:number, slowPeriod:number}} params
  * @returns {'enter'|'exit'|'none'}
+ * @throws {Error} if fastPeriod is not less than slowPeriod, or if the
+ *   last two candles are not strictly ascending by time (both enforced,
+ *   not just assumed)
  */
 export function detectLiveSignal(candles, currentPosition, { fastPeriod, slowPeriod }) {
   const n = candles.length
+
+  if (fastPeriod >= slowPeriod) {
+    throw new Error(`detectLiveSignal: fastPeriod (${fastPeriod}) must be less than slowPeriod (${slowPeriod})`)
+  }
+
+  if (n >= 2 && !(new Date(candles[n - 1].time) > new Date(candles[n - 2].time))) {
+    throw new Error('detectLiveSignal: candles must be strictly ascending by time')
+  }
+
   if (n < slowPeriod + 1) return 'none'
 
   const closes = candles.map((c) => c.close)

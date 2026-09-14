@@ -43,3 +43,25 @@ test('detectLiveSignal returns "none" mid-trend with no fresh crossover', () => 
   const signal = detectLiveSignal(candles, { entryPrice: 12 }, { fastPeriod: 2, slowPeriod: 3 })
   assert.equal(signal, 'none')
 })
+
+test('detectLiveSignal throws if fastPeriod is not less than slowPeriod', () => {
+  const candles = candlesFromCloses([10, 10, 10])
+  assert.throws(() => detectLiveSignal(candles, null, { fastPeriod: 3, slowPeriod: 3 }))
+  assert.throws(() => detectLiveSignal(candles, null, { fastPeriod: 5, slowPeriod: 3 }))
+})
+
+test('detectLiveSignal throws if the last two candles are not strictly ascending by time', () => {
+  const candles = [
+    { time: '2026-01-02T00:00:00Z', close: 10 },
+    { time: '2026-01-01T00:00:00Z', close: 11 }, // out of order
+  ]
+  assert.throws(() => detectLiveSignal(candles, null, { fastPeriod: 2, slowPeriod: 3 }))
+})
+
+test('detectLiveSignal throws on duplicate timestamps in the last two candles', () => {
+  const candles = [
+    { time: '2026-01-01T00:00:00Z', close: 10 },
+    { time: '2026-01-01T00:00:00Z', close: 11 }, // duplicate
+  ]
+  assert.throws(() => detectLiveSignal(candles, null, { fastPeriod: 2, slowPeriod: 3 }))
+})
