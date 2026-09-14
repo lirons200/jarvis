@@ -234,7 +234,9 @@ async function pollOnce(config) {
           console.error(`[jarvis:trading] could not check market status for ${pair}: ${err.message}`)
           continue
         }
-        if (pricing[pair]?.tradeable === false) {
+        // Fail closed: require explicit confirmation the market is open. A
+        // missing pricing entry means UNVERIFIED, not "tradeable".
+        if (pricing[pair]?.tradeable !== true) {
           continue
         }
 
@@ -257,17 +259,32 @@ async function pollOnce(config) {
           // OANDA can fill the market order while separately rejecting the stop
           // leg (e.g. price moved). Verify against OANDA's own trade state before
           // ever trusting this position is protected.
-          const statusAfterFill = await fetchOpenTradesStopLossStatus(config)
-          const confirmed = statusAfterFill[pair]?.hasStopLoss === true
+          // One retry with a short delay before concluding "unprotected" — OANDA
+          // creating the fill and the dependent stop-loss order are two separate
+          // pieces of state that a follow-up query might observe before both have
+          // settled; a single retry cheaply avoids treating that race as a real
+          // safety failure while still catching a genuinely rejected stop quickly.
+          let confirmed = (await fetchOpenTradesStopLossStatus(config))[pair]?.hasStopLoss === true
+          if (!confirmed) {
+            await new Promise((resolve) => setTimeout(resolve, 800))
+            confirmed = (await fetchOpenTradesStopLossStatus(config))[pair]?.hasStopLoss === true
+          }
           state.hasStopLoss[pair] = confirmed
           if (confirmed) {
             await announce(`Opened a ${pair} position, ${config.maxPositionUnits} units.`)
           } else {
             // No naked positions, ever — close it immediately and stop trading
             // rather than leave an unprotected live position open.
-            await closeLongPosition({ ...config, pair })
-            await appendJournalEntry(JOURNAL_PATH, { pair, event: 'closed-unprotected' })
-            haltTrading(`${pair} filled without a confirmed stop-loss — closed immediately`)
+            // Halt before attempting the close — halting can't fail, so this
+            // guarantees the bot stops even if the close itself throws below.
+            haltTrading(`${pair} filled without a confirmed stop-loss — closing immediately`)
+            try {
+              await closeLongPosition({ ...config, pair })
+              await appendJournalEntry(JOURNAL_PATH, { pair, event: 'closed-unprotected' })
+            } catch (closeErr) {
+              console.error(`[jarvis:trading] CRITICAL — could not close unprotected ${pair} position: ${closeErr.message}. Manual intervention required.`)
+              await appendJournalEntry(JOURNAL_PATH, { pair, event: 'close-unprotected-failed', error: closeErr.message })
+            }
             return
           }
         } else {
@@ -290,7 +307,12 @@ async function pollOnce(config) {
 function startPoller(config) {
   const tick = async () => {
     await pollOnce(config)
-    state.timer = setTimeout(tick, config.pollIntervalMs)
+    // A halt raised INSIDE pollOnce must actually stop the timer: stopPoller
+    // already ran (clearing a timer that wasn't armed yet), so re-arming here
+    // would silently undo it.
+    if (!state.halted) {
+      state.timer = setTimeout(tick, config.pollIntervalMs)
+    }
   }
   void tick()
   return () => {

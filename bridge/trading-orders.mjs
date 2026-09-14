@@ -220,9 +220,14 @@ export async function fetchOpenTradesStopLossStatus({ host, accountId, apiKey })
   )
   const out = {}
   for (const trade of tradesRes.json?.trades ?? []) {
+    const protectedNow = stopLossTradeIds.has(trade.id)
+    const existing = out[trade.instrument]
+    // If this instrument has more than one open trade, it's only
+    // considered protected when EVERY trade on it has a stop — one
+    // unprotected trade must not be masked by another that does.
     out[trade.instrument] = {
       tradeId: trade.id,
-      hasStopLoss: stopLossTradeIds.has(trade.id),
+      hasStopLoss: existing ? existing.hasStopLoss && protectedNow : protectedNow,
     }
   }
   return out
