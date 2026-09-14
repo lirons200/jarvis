@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { detectLiveSignal } from './trading-signal.mjs'
+import { detectLiveSignal, detectCrossoverDirection } from './trading-signal.mjs'
 
 function candlesFromCloses(closes) {
   return closes.map((close, i) => ({
@@ -64,4 +64,19 @@ test('detectLiveSignal throws on duplicate timestamps in the last two candles', 
     { time: '2026-01-01T00:00:00Z', close: 11 }, // duplicate
   ]
   assert.throws(() => detectLiveSignal(candles, null, { fastPeriod: 2, slowPeriod: 3 }))
+})
+
+test('detectCrossoverDirection reports "up" on an upward crossover regardless of position', () => {
+  const candles = candlesFromCloses([10, 10, 10, 12, 14, 16])
+  assert.equal(detectCrossoverDirection(candles.slice(0, 4), { fastPeriod: 2, slowPeriod: 3 }), 'up')
+})
+
+test('detectCrossoverDirection reports "down" on a downward crossover regardless of position', () => {
+  const candles = candlesFromCloses([10, 10, 10, 12, 14, 16, 10])
+  assert.equal(detectCrossoverDirection(candles, { fastPeriod: 2, slowPeriod: 3 }), 'down')
+})
+
+test('detectCrossoverDirection reports "none" with no fresh crossover', () => {
+  const candles = candlesFromCloses([10, 10, 10, 12, 14])
+  assert.equal(detectCrossoverDirection(candles, { fastPeriod: 2, slowPeriod: 3 }), 'none')
 })

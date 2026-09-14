@@ -29,3 +29,4 @@ public/mediapipe/
 # Scratch mockups from superpowers:brainstorming's visual companion.
 .superpowers/
 bridge/data/*.jsonl
+bridge/data/trading-daily-state.json

@@ -141,8 +141,12 @@ export async function fetchOpenPositions({ host, accountId, apiKey }) {
 export async function fetchAccountPL({ host, accountId, apiKey }) {
   const { json } = await oandaRequest({ host, accountId, apiKey, method: 'GET', path: '' })
   return {
-    unrealizedPL: Number(json?.account?.unrealizedPL ?? 0),
-    realizedPL: Number(json?.account?.pl ?? 0),
+    // No `?? 0` fallback: Number(undefined) is NaN, which correctly flows
+    // into checkDailyLossHalt's fail-closed NaN guard. Defaulting a missing
+    // field to 0 would silently convert "I don't know the P&L" into "the
+    // P&L is zero", defeating that guard.
+    unrealizedPL: Number(json?.account?.unrealizedPL),
+    realizedPL: Number(json?.account?.pl),
   }
 }
 
@@ -150,8 +154,16 @@ export async function fetchAccountPL({ host, accountId, apiKey }) {
  * Places a long market order with a stop-loss attached. Returns
  * parseOrderResponse's result — callers must check `.filled` before
  * treating the trade as real; see parseOrderResponse's doc comment.
+ *
+ * The stop is attached by DISTANCE, not absolute price: OANDA's
+ * StopLossDetails supports a `distance` field, which prices the stop
+ * relative to wherever this FOK market order actually fills, rather than
+ * off a possibly-stale candle close. NOTE: the exact field name `distance`
+ * on StopLossDetails was not freshly re-verified against live OANDA docs
+ * this session — confirm before trusting against a live account, same
+ * caution already applied to the candles endpoint in phase 3.
  */
-export async function placeMarketOrder({ host, accountId, apiKey, pair, units, stopLossPrice, clientOrderId }) {
+export async function placeMarketOrder({ host, accountId, apiKey, pair, units, stopLossDistance, clientOrderId }) {
   if (!Number.isFinite(units) || units <= 0) {
     throw new Error(`placeMarketOrder: units must be a positive finite number, got ${units}`)
   }
@@ -164,7 +176,7 @@ export async function placeMarketOrder({ host, accountId, apiKey, pair, units, s
         units: String(Math.abs(Math.round(units))),
         timeInForce: 'FOK',
         positionFill: 'DEFAULT',
-        stopLossOnFill: { price: stopLossPrice },
+        stopLossOnFill: { distance: stopLossDistance },
         clientExtensions: { id: clientOrderId },
       },
     },
@@ -180,4 +192,38 @@ export async function closeLongPosition({ host, accountId, apiKey, pair }) {
     body: { longUnits: 'ALL' },
   })
   return json
+}
+
+/**
+ * Every currently open trade, with whether OANDA confirms a stop-loss
+ * order attached to it. This is the real source of truth for "is this
+ * position protected" — never assume from in-memory state, which starts
+ * empty on every process boot and would otherwise flag every position
+ * (even ones this same bot protected correctly moments ago) as unprotected
+ * on every restart.
+ *
+ * NOTE: exact OANDA v20 field names here (openTrades trade shape,
+ * pendingOrders STOP_LOSS order's tradeID linkage) were not freshly
+ * re-verified against live OANDA docs this session — confirm against
+ * current docs before trusting this in production, same caution already
+ * applied to the candles endpoint in phase 3.
+ */
+export async function fetchOpenTradesStopLossStatus({ host, accountId, apiKey }) {
+  const [tradesRes, ordersRes] = await Promise.all([
+    oandaRequest({ host, accountId, apiKey, method: 'GET', path: '/openTrades' }),
+    oandaRequest({ host, accountId, apiKey, method: 'GET', path: '/pendingOrders' }),
+  ])
+  const stopLossTradeIds = new Set(
+    (ordersRes.json?.orders ?? [])
+      .filter((o) => o.type === 'STOP_LOSS')
+      .map((o) => o.tradeID),
+  )
+  const out = {}
+  for (const trade of tradesRes.json?.trades ?? []) {
+    out[trade.instrument] = {
+      tradeId: trade.id,
+      hasStopLoss: stopLossTradeIds.has(trade.id),
+    }
+  }
+  return out
 }

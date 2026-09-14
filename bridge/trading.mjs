@@ -6,7 +6,7 @@
  * and timing, not strategy or risk math.
  */
 
-import { mkdir, appendFile, readFile } from 'node:fs/promises'
+import { mkdir, appendFile, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 /**
@@ -67,6 +67,34 @@ export async function readJournalTail(path, n) {
   return parsed.slice(-n)
 }
 
+const DAILY_STATE_PATH = new URL('./data/trading-daily-state.json', import.meta.url).pathname
+
+/**
+ * Persists { dayKey, dayStartRealizedPL } so a same-day restart doesn't
+ * reset the daily-loss baseline to the current lifetime P&L (which would
+ * silently forget losses that happened earlier today, before the
+ * restart). Best-effort: a read/write failure here must never crash
+ * trading — falling back to an in-memory-only baseline (which resets on
+ * every restart) is a safe degradation, not a halt condition.
+ */
+async function loadDailyState() {
+  try {
+    const raw = await readFile(DAILY_STATE_PATH, 'utf8')
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+async function saveDailyState(dayKey, dayStartRealizedPL) {
+  try {
+    await mkdir(dirname(DAILY_STATE_PATH), { recursive: true })
+    await writeFile(DAILY_STATE_PATH, JSON.stringify({ dayKey, dayStartRealizedPL }), 'utf8')
+  } catch (err) {
+    console.error(`[jarvis:trading] could not persist daily P&L baseline: ${err.message}`)
+  }
+}
+
 /**
  * Run once at boot, before the poller starts, against OANDA's real open
  * positions — never trust an assumption about what should be open. Three
@@ -105,13 +133,14 @@ export function reconcileOpenPositions(openPositions, configuredPairs, hasStopLo
 
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
-import { resolveEnv, hostFor } from './forex.mjs'
+import { resolveEnv, hostFor, fetchPricingOnce, parsePricingResponse } from './forex.mjs'
 import { fetchCandlesOnce } from './backtest.mjs'
-import { detectLiveSignal } from './trading-signal.mjs'
-import { computeATR, computeStopLossPrice, checkPositionSize, checkTotalExposure, checkDailyLossHalt } from './trading-risk.mjs'
+import { detectLiveSignal, detectCrossoverDirection } from './trading-signal.mjs'
+import { computeATR, checkPositionSize, checkTotalExposure, checkDailyLossHalt, tradingDayKey } from './trading-risk.mjs'
 import {
   fetchInstrumentPrecision, fetchOpenPositions, fetchAccountPL,
   placeMarketOrder, closeLongPosition, formatStopPrice, buildClientOrderId,
+  fetchOpenTradesStopLossStatus,
 } from './trading-orders.mjs'
 
 const JOURNAL_PATH = new URL('./data/trading-journal.jsonl', import.meta.url).pathname
@@ -124,12 +153,16 @@ const state = {
   timer: null,
   hasStopLoss: {}, // pair -> boolean, tracked from fill confirmations this run
   onAnnounce: null, // set by initTrading, pushes to the browser
+  stopPoller: null,
+  dayKey: null,
+  dayStartRealizedPL: 0,
 }
 
 function haltTrading(reason) {
   state.halted = true
   state.haltReason = reason
   console.error(`[jarvis:trading] HALTED — ${reason}`)
+  state.stopPoller?.()
 }
 
 async function announce(text) {
@@ -147,9 +180,26 @@ async function pollOnce(config) {
   if (state.polling || state.halted) return
   state.polling = true
   try {
+    const nowKey = tradingDayKey(Date.now())
+    if (state.dayKey === null) {
+      const saved = await loadDailyState()
+      if (saved && saved.dayKey === nowKey) {
+        state.dayKey = saved.dayKey
+        state.dayStartRealizedPL = saved.dayStartRealizedPL
+      }
+    }
     const { realizedPL, unrealizedPL } = await fetchAccountPL(config)
-    if (checkDailyLossHalt(realizedPL, unrealizedPL, config.maxDailyLoss)) {
-      haltTrading(`daily loss cap reached (realized ${realizedPL} + unrealized ${unrealizedPL})`)
+    if (state.dayKey !== nowKey) {
+      // Either the very first tick ever, or a genuine new trading day — reset
+      // the baseline to the account's current lifetime realized P&L, so
+      // "today's" realized P&L starts counting from zero from this point.
+      state.dayKey = nowKey
+      state.dayStartRealizedPL = realizedPL
+      await saveDailyState(nowKey, realizedPL)
+    }
+    const dailyRealizedPL = realizedPL - state.dayStartRealizedPL
+    if (checkDailyLossHalt(dailyRealizedPL, unrealizedPL, config.maxDailyLoss)) {
+      haltTrading(`daily loss cap reached (today's realized ${dailyRealizedPL.toFixed(2)} + unrealized ${unrealizedPL.toFixed(2)})`)
       return
     }
 
@@ -160,8 +210,8 @@ async function pollOnce(config) {
       // Only touch OANDA's real position state when there's a candidate
       // signal — avoids an API call on every pair on every tick when
       // nothing changed.
-      const provisionalSignal = detectLiveSignal(candles, null, config)
-      if (provisionalSignal === 'none') continue
+      const direction = detectCrossoverDirection(candles, config)
+      if (direction === 'none') continue
 
       const openPositions = await fetchOpenPositions(config)
       const currentPosition = openPositions[pair]?.longUnits > 0 ? openPositions[pair] : null
@@ -176,24 +226,50 @@ async function pollOnce(config) {
           continue
         }
 
+        let pricing
+        try {
+          const rawPricing = await fetchPricingOnce({ ...config, pairs: [pair] })
+          pricing = parsePricingResponse(rawPricing, Date.now())
+        } catch (err) {
+          console.error(`[jarvis:trading] could not check market status for ${pair}: ${err.message}`)
+          continue
+        }
+        if (pricing[pair]?.tradeable === false) {
+          continue
+        }
+
         const atr = computeATR(candles)
         if (atr === null) continue
-        const entryPrice = candles[candles.length - 1].close
-        const stopPrice = computeStopLossPrice(entryPrice, atr, config.atrStopMultiplier)
+        const stopDistance = atr * config.atrStopMultiplier
         const precision = await fetchInstrumentPrecision({ ...config, pair })
         const clientOrderId = buildClientOrderId(pair, candles[candles.length - 1].time)
 
         const result = await placeMarketOrder({
           ...config, pair,
           units: config.maxPositionUnits,
-          stopLossPrice: formatStopPrice(stopPrice, precision),
+          stopLossDistance: formatStopPrice(stopDistance, precision),
           clientOrderId,
         })
 
         await appendJournalEntry(JOURNAL_PATH, { pair, event: 'enter', ...result })
         if (result.filled) {
-          state.hasStopLoss[pair] = true
-          await announce(`Opened a ${pair} position, ${config.maxPositionUnits} units.`)
+          // A fill does not by itself confirm the attached stop-loss survived —
+          // OANDA can fill the market order while separately rejecting the stop
+          // leg (e.g. price moved). Verify against OANDA's own trade state before
+          // ever trusting this position is protected.
+          const statusAfterFill = await fetchOpenTradesStopLossStatus(config)
+          const confirmed = statusAfterFill[pair]?.hasStopLoss === true
+          state.hasStopLoss[pair] = confirmed
+          if (confirmed) {
+            await announce(`Opened a ${pair} position, ${config.maxPositionUnits} units.`)
+          } else {
+            // No naked positions, ever — close it immediately and stop trading
+            // rather than leave an unprotected live position open.
+            await closeLongPosition({ ...config, pair })
+            await appendJournalEntry(JOURNAL_PATH, { pair, event: 'closed-unprotected' })
+            haltTrading(`${pair} filled without a confirmed stop-loss — closed immediately`)
+            return
+          }
         } else {
           await announce(`${pair} entry did not fill: ${result.reason}.`)
         }
@@ -280,6 +356,10 @@ export async function initTrading(onAnnounce) {
   }
 
   const openPositions = await fetchOpenPositions(config)
+  const stopLossStatus = await fetchOpenTradesStopLossStatus(config)
+  for (const [pair, info] of Object.entries(stopLossStatus)) {
+    state.hasStopLoss[pair] = info.hasStopLoss
+  }
   const reconciliation = reconcileOpenPositions(openPositions, config.pairs, state.hasStopLoss)
   if (reconciliation.unexpected.length) {
     console.error(`[jarvis:trading] unexpected open positions on boot (adopted, monitor-only): ${reconciliation.unexpected.join(', ')}`)
@@ -293,7 +373,7 @@ export async function initTrading(onAnnounce) {
 
   state.armed = true
   console.log(`[jarvis:trading] armed — ${env} — pairs ${config.pairs.join(', ')}`)
-  startPoller(config)
+  state.stopPoller = startPoller(config)
   return config
 }
 

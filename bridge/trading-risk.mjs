@@ -77,3 +77,31 @@ export function checkDailyLossHalt(realizedPL, unrealizedPL, maxDailyLoss) {
   }
   return realizedPL + unrealizedPL <= -Math.abs(maxDailyLoss)
 }
+
+/**
+ * OANDA's trading day rolls at 17:00 America/New_York, which shifts with
+ * US DST — not UTC midnight. Returns a key that changes exactly once per
+ * trading day (e.g. "2026-01-04"), so a caller can detect "a new trading
+ * day has started" by comparing this against a previously stored key.
+ */
+export function tradingDayKey(nowMs) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', hourCycle: 'h23',
+    }).formatToParts(nowMs).map((p) => [p.type, p.value]),
+  )
+  const hour = Number(parts.hour)
+  let { year, month, day } = parts
+  // Before 17:00 NY, this moment still belongs to the trading day that
+  // began yesterday at 17:00.
+  if (hour < 17) {
+    const d = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)))
+    d.setUTCDate(d.getUTCDate() - 1)
+    year = String(d.getUTCFullYear())
+    month = String(d.getUTCMonth() + 1).padStart(2, '0')
+    day = String(d.getUTCDate()).padStart(2, '0')
+  }
+  return `${year}-${month}-${day}`
+}

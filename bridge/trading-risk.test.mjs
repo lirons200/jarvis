@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { trueRange, computeATR, computeStopLossPrice, checkPositionSize, checkTotalExposure, checkDailyLossHalt } from './trading-risk.mjs'
+import { trueRange, computeATR, computeStopLossPrice, checkPositionSize, checkTotalExposure, checkDailyLossHalt, tradingDayKey } from './trading-risk.mjs'
 
 test('trueRange for the first candle is just its own high-low range', () => {
   const candles = [{ high: 1.12, low: 1.10, close: 1.11 }]
@@ -88,4 +88,15 @@ test('computeStopLossPrice throws on a non-positive or non-finite atr', () => {
   assert.throws(() => computeStopLossPrice(1.1, 0, 2))
   assert.throws(() => computeStopLossPrice(1.1, -0.002, 2))
   assert.throws(() => computeStopLossPrice(1.1, NaN, 2))
+})
+
+test('tradingDayKey rolls over at 17:00 America/New_York, not UTC midnight', () => {
+  // 2026-01-05 21:30 UTC = 2026-01-05 16:30 America/New_York (EST, UTC-5)
+  // — before the 17:00 rollover, so still "2026-01-04"'s trading day.
+  const beforeRollover = Date.UTC(2026, 0, 5, 21, 30)
+  assert.equal(tradingDayKey(beforeRollover), '2026-01-04')
+  // 2026-01-05 22:30 UTC = 2026-01-05 17:30 America/New_York — after the
+  // rollover, so now "2026-01-05"'s trading day.
+  const afterRollover = Date.UTC(2026, 0, 5, 22, 30)
+  assert.equal(tradingDayKey(afterRollover), '2026-01-05')
 })
