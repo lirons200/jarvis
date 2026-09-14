@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { trueRange, computeATR } from './trading-risk.mjs'
+import { trueRange, computeATR, computeStopLossPrice, checkPositionSize, checkTotalExposure, checkDailyLossHalt } from './trading-risk.mjs'
 
 test('trueRange for the first candle is just its own high-low range', () => {
   const candles = [{ high: 1.12, low: 1.10, close: 1.11 }]
@@ -52,4 +52,28 @@ test('computeATR returns null rather than NaN when a candle is missing high/low/
   ]
   const result = computeATR(candles, 3)
   assert.equal(result, null)
+})
+
+test('computeStopLossPrice places the stop below entry for a long, by ATR times the multiplier', () => {
+  const price = computeStopLossPrice(1.1000, 0.0020, 2)
+  assert.ok(Math.abs(price - 1.0960) < 1e-9) // 1.1000 - (0.0020 * 2)
+})
+
+test('checkPositionSize allows units at or under the cap, rejects over', () => {
+  assert.equal(checkPositionSize(1000, 1000), true)
+  assert.equal(checkPositionSize(1001, 1000), false)
+})
+
+test('checkTotalExposure allows a new trade that keeps total exposure at or under the cap', () => {
+  assert.equal(checkTotalExposure(4000, 1000, 5000), true) // 4000+1000=5000, at cap
+  assert.equal(checkTotalExposure(4500, 1000, 5000), false) // 5500 > 5000
+})
+
+test('checkDailyLossHalt triggers once realized+unrealized P&L breaches the negative cap', () => {
+  // 5000 loss cap, -4999 combined -> not yet halted
+  assert.equal(checkDailyLossHalt(-3000, -1999, 5000), false)
+  // -5000 combined -> halted (at the boundary)
+  assert.equal(checkDailyLossHalt(-3000, -2000, 5000), true)
+  // profit -> never halted regardless of magnitude
+  assert.equal(checkDailyLossHalt(10000, 0, 5000), false)
 })

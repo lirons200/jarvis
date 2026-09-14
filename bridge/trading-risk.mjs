@@ -34,3 +34,34 @@ export function computeATR(candles, period = 14) {
   const result = sum / period
   return Number.isFinite(result) ? result : null
 }
+
+/** Long-only: the stop always sits below entry, by ATR × multiplier. */
+export function computeStopLossPrice(entryPrice, atr, multiplier) {
+  return entryPrice - atr * multiplier
+}
+
+/** Per-trade cap — JARVIS_TRADING_MAX_POSITION_UNITS. */
+export function checkPositionSize(units, maxPositionUnits) {
+  return units <= maxPositionUnits
+}
+
+/**
+ * Account-wide cap — JARVIS_TRADING_MAX_TOTAL_UNITS. Correlated pairs
+ * (EUR_USD and GBP_USD often move together) mean a per-trade cap alone
+ * doesn't bound total risk; this checks the SUM across every currently
+ * open position plus the candidate new one.
+ */
+export function checkTotalExposure(currentTotalUnits, newUnits, maxTotalUnits) {
+  return currentTotalUnits + newUnits <= maxTotalUnits
+}
+
+/**
+ * Both realized and unrealized P&L must be supplied by the caller, read
+ * directly from OANDA's own account endpoint — never recomputed locally.
+ * A pair-scale price delta fed in here instead of a real account-currency
+ * P&L would silently compare the wrong units, which is exactly the bug
+ * this function exists to guard against by taking pre-converted numbers.
+ */
+export function checkDailyLossHalt(realizedPL, unrealizedPL, maxDailyLoss) {
+  return realizedPL + unrealizedPL <= -Math.abs(maxDailyLoss)
+}
