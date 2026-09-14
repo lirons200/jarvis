@@ -240,6 +240,19 @@ Everything is optional in bridge mode. Frontend settings live in `.env.local`
 | `JARVIS_FOREX_PAIRS` | `EUR_USD,GBP_USD,USD_JPY` | Comma-separated OANDA instrument names to poll. |
 | `JARVIS_FOREX_POLL_INTERVAL_MS` | `10000` | Poll interval, clamped to 2000-60000ms. |
 
+### Backtesting
+
+Test a moving-average-crossover strategy against a year of OANDA daily
+history, either by voice ("backtest EUR/USD") or from the command line:
+
+```bash
+npm run backtest -- EUR_USD          # defaults: 10/30-day MA, 252 candles
+npm run backtest -- GBP_USD 5 20 500 # fastPeriod slowPeriod count
+```
+
+Needs the same `JARVIS_OANDA_API_KEY`/`JARVIS_OANDA_ACCOUNT_ID` as the forex
+feed. Results are not saved anywhere — each run is independent.
+
 ### Frontend (`.env.local`)
 
 | Variable | Effect |
