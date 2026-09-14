@@ -170,10 +170,10 @@ export function vetTarget(raw) {
 }
 
 /** One hop. Resolves with the IncomingMessage once headers are in. */
-export function requestOnce(url, headers, timeoutMs) {
+export function requestOnce(url, headers, timeoutMs, { method = 'GET', body } = {}) {
   return new Promise((resolve, reject) => {
     const req = (url.protocol === 'https:' ? httpsRequest : httpRequest)(url, {
-      method: 'GET',
+      method,
       headers,
       // The SSRF gate. Everything else here is plumbing.
       lookup: guardedLookup,
@@ -203,7 +203,8 @@ export function requestOnce(url, headers, timeoutMs) {
             : proxyError(502, 'upstream unreachable'),
       )
     })
-    req.end()
+    if (body !== undefined) req.end(body)
+    else req.end()
   })
 }
 
@@ -213,10 +214,10 @@ export function requestOnce(url, headers, timeoutMs) {
  * http://169.254.169.254/ is the whole SSRF attack, and a redirect to
  * file:// or data: is the other half of it.
  */
-export async function openRemote(startUrl, headers, timeoutMs) {
+export async function openRemote(startUrl, headers, timeoutMs, options) {
   let url = startUrl
   for (let hop = 0; ; hop++) {
-    const res = await requestOnce(url, headers, timeoutMs)
+    const res = await requestOnce(url, headers, timeoutMs, options)
     const status = res.statusCode ?? 0
     const location = res.headers.location
     if (status >= 300 && status < 400 && location) {
