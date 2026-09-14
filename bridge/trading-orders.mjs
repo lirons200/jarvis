@@ -195,6 +195,34 @@ export async function closeLongPosition({ host, accountId, apiKey, pair }) {
 }
 
 /**
+ * Pure aggregation: given OANDA's raw trades and pending-orders responses,
+ * compute per-instrument stop-loss protection status. Split out from
+ * fetchOpenTradesStopLossStatus specifically so this logic — which
+ * determines whether the bot believes a live position is protected — can
+ * be unit-tested without a network call.
+ */
+export function aggregateStopLossStatus(tradesJson, ordersJson) {
+  const stopLossTradeIds = new Set(
+    (ordersJson?.orders ?? [])
+      .filter((o) => o.type === 'STOP_LOSS')
+      .map((o) => o.tradeID),
+  )
+  const out = {}
+  for (const trade of tradesJson?.trades ?? []) {
+    const protectedNow = stopLossTradeIds.has(trade.id)
+    const existing = out[trade.instrument]
+    // If this instrument has more than one open trade, it's only
+    // considered protected when EVERY trade on it has a stop — one
+    // unprotected trade must not be masked by another that does.
+    out[trade.instrument] = {
+      tradeId: trade.id,
+      hasStopLoss: existing ? existing.hasStopLoss && protectedNow : protectedNow,
+    }
+  }
+  return out
+}
+
+/**
  * Every currently open trade, with whether OANDA confirms a stop-loss
  * order attached to it. This is the real source of truth for "is this
  * position protected" — never assume from in-memory state, which starts
@@ -213,22 +241,5 @@ export async function fetchOpenTradesStopLossStatus({ host, accountId, apiKey })
     oandaRequest({ host, accountId, apiKey, method: 'GET', path: '/openTrades' }),
     oandaRequest({ host, accountId, apiKey, method: 'GET', path: '/pendingOrders' }),
   ])
-  const stopLossTradeIds = new Set(
-    (ordersRes.json?.orders ?? [])
-      .filter((o) => o.type === 'STOP_LOSS')
-      .map((o) => o.tradeID),
-  )
-  const out = {}
-  for (const trade of tradesRes.json?.trades ?? []) {
-    const protectedNow = stopLossTradeIds.has(trade.id)
-    const existing = out[trade.instrument]
-    // If this instrument has more than one open trade, it's only
-    // considered protected when EVERY trade on it has a stop — one
-    // unprotected trade must not be masked by another that does.
-    out[trade.instrument] = {
-      tradeId: trade.id,
-      hasStopLoss: existing ? existing.hasStopLoss && protectedNow : protectedNow,
-    }
-  }
-  return out
+  return aggregateStopLossStatus(tradesRes.json, ordersRes.json)
 }

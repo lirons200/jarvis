@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseOrderResponse, formatStopPrice, buildClientOrderId } from './trading-orders.mjs'
+import { parseOrderResponse, formatStopPrice, buildClientOrderId, aggregateStopLossStatus } from './trading-orders.mjs'
 
 test('parseOrderResponse reports a fill from orderFillTransaction', () => {
   const json = {
@@ -61,4 +61,73 @@ test('buildClientOrderId is deterministic for the same pair and signal date', ()
   assert.equal(a, b)
   const c = buildClientOrderId('GBP_USD', '2026-01-04T00:00:00Z')
   assert.notEqual(a, c)
+})
+
+test('aggregateStopLossStatus reports a single protected trade as protected', () => {
+  const tradesJson = { trades: [{ id: 't1', instrument: 'EUR_USD' }] }
+  const ordersJson = { orders: [{ type: 'STOP_LOSS', tradeID: 't1' }] }
+  const result = aggregateStopLossStatus(tradesJson, ordersJson)
+  assert.equal(result.EUR_USD.hasStopLoss, true)
+  assert.equal(result.EUR_USD.tradeId, 't1')
+})
+
+test('aggregateStopLossStatus reports a single unprotected trade as unprotected', () => {
+  const tradesJson = { trades: [{ id: 't1', instrument: 'EUR_USD' }] }
+  const ordersJson = { orders: [] }
+  const result = aggregateStopLossStatus(tradesJson, ordersJson)
+  assert.equal(result.EUR_USD.hasStopLoss, false)
+})
+
+test('aggregateStopLossStatus reports an instrument as unprotected if ANY of its trades lacks a stop-loss', () => {
+  const tradesJson = {
+    trades: [
+      { id: 't1', instrument: 'EUR_USD' },
+      { id: 't2', instrument: 'EUR_USD' },
+    ],
+  }
+  const ordersJson = { orders: [{ type: 'STOP_LOSS', tradeID: 't1' }] } // only t1 is protected
+  const result = aggregateStopLossStatus(tradesJson, ordersJson)
+  assert.equal(result.EUR_USD.hasStopLoss, false)
+})
+
+test('aggregateStopLossStatus reports an instrument as protected only if ALL of its trades have a stop-loss', () => {
+  const tradesJson = {
+    trades: [
+      { id: 't1', instrument: 'EUR_USD' },
+      { id: 't2', instrument: 'EUR_USD' },
+    ],
+  }
+  const ordersJson = {
+    orders: [
+      { type: 'STOP_LOSS', tradeID: 't1' },
+      { type: 'STOP_LOSS', tradeID: 't2' },
+    ],
+  }
+  const result = aggregateStopLossStatus(tradesJson, ordersJson)
+  assert.equal(result.EUR_USD.hasStopLoss, true)
+})
+
+test('aggregateStopLossStatus ignores non-STOP_LOSS pending orders', () => {
+  const tradesJson = { trades: [{ id: 't1', instrument: 'EUR_USD' }] }
+  const ordersJson = { orders: [{ type: 'TAKE_PROFIT', tradeID: 't1' }] }
+  const result = aggregateStopLossStatus(tradesJson, ordersJson)
+  assert.equal(result.EUR_USD.hasStopLoss, false)
+})
+
+test('aggregateStopLossStatus handles multiple instruments independently', () => {
+  const tradesJson = {
+    trades: [
+      { id: 't1', instrument: 'EUR_USD' },
+      { id: 't2', instrument: 'GBP_USD' },
+    ],
+  }
+  const ordersJson = { orders: [{ type: 'STOP_LOSS', tradeID: 't1' }] }
+  const result = aggregateStopLossStatus(tradesJson, ordersJson)
+  assert.equal(result.EUR_USD.hasStopLoss, true)
+  assert.equal(result.GBP_USD.hasStopLoss, false)
+})
+
+test('aggregateStopLossStatus tolerates missing trades/orders arrays', () => {
+  assert.deepEqual(aggregateStopLossStatus({}, {}), {})
+  assert.deepEqual(aggregateStopLossStatus(null, null), {})
 })
