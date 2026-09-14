@@ -162,3 +162,99 @@ export function computeStats(trades, startingBalance = 10000) {
     endingBalance: balance,
   }
 }
+
+const PAIR_RE = /^[A-Z]{3}_[A-Z]{3}$/
+
+function formatTrade(t, i) {
+  return (
+    `${i + 1}. ${t.entryTime.slice(0, 10)} @ ${t.entryPrice.toFixed(5)} -> ` +
+    `${t.exitTime.slice(0, 10)} @ ${t.exitPrice.toFixed(5)} ` +
+    `(P&L ${t.pnl >= 0 ? '+' : ''}${t.pnl.toFixed(5)})`
+  )
+}
+
+const ok = (text) => ({ content: [{ type: 'text', text }] })
+const refuse = (text) => ({ isError: true, content: [{ type: 'text', text }] })
+
+export function backtestServer() {
+  return createSdkMcpServer({
+    name: 'jarvis_backtest',
+    version: '1.0.0',
+    instructions:
+      'Backtest a moving-average-crossover strategy against a year of OANDA ' +
+      'daily history. Returns stats and a trade list as plain text — put the ' +
+      'substance on a blade using your own hud-* markup, the same way you ' +
+      'would for any other data tool.',
+    tools: [
+      tool(
+        'backtest_run',
+        'Backtest a moving-average-crossover strategy on a forex pair using ' +
+          'historical OANDA daily candles. Reports total return, win rate, ' +
+          'max drawdown, trade count, and the individual trades.',
+        {
+          pair: z.string().describe('Instrument name, e.g. EUR_USD, GBP_USD'),
+          fast_period: z.number().optional().describe('Fast moving-average period in days, default 10'),
+          slow_period: z.number().optional().describe('Slow moving-average period in days, default 30'),
+          count: z.number().optional().describe('Number of daily candles to fetch, default 252 (about one year)'),
+        },
+        async (args) => {
+          const apiKey = process.env.JARVIS_OANDA_API_KEY
+          const accountId = process.env.JARVIS_OANDA_ACCOUNT_ID
+          if (!apiKey || !accountId) {
+            return refuse(
+              'Forex backtesting is not configured — set JARVIS_OANDA_API_KEY ' +
+                'and JARVIS_OANDA_ACCOUNT_ID to enable it.',
+            )
+          }
+
+          let env
+          try {
+            env = resolveEnv()
+          } catch (err) {
+            return refuse(`Forex backtesting is not configured — ${err.message}`)
+          }
+
+          const pair = String(args.pair ?? '').trim().toUpperCase()
+          if (!PAIR_RE.test(pair)) {
+            return refuse(`"${pair}" isn't a valid instrument name, e.g. EUR_USD.`)
+          }
+
+          const count = Math.min(5000, Math.max(30, Math.round(Number(args.count) || 252)))
+
+          let candles
+          try {
+            candles = await fetchCandlesOnce({ host: hostFor(env), accountId, apiKey, pair, count })
+          } catch (err) {
+            return refuse(`Could not fetch historical data for ${pair}: ${err.message}`)
+          }
+          if (!candles.length) {
+            return ok(`No historical data available for ${pair}.`)
+          }
+
+          const fastPeriod = Math.max(2, Math.round(Number(args.fast_period) || 10))
+          const slowPeriod = Math.max(fastPeriod + 1, Math.round(Number(args.slow_period) || 30))
+          const trades = movingAverageCrossoverStrategy(candles, { fastPeriod, slowPeriod })
+
+          if (!trades.length) {
+            return ok(
+              `Backtested ${pair} over ${candles.length} daily candles ` +
+                `(${fastPeriod}/${slowPeriod}-day MA crossover): 0 trades — ` +
+                `no crossovers occurred in this window.`,
+            )
+          }
+
+          const stats = computeStats(trades)
+          return ok(
+            `Backtested ${pair} over ${candles.length} daily candles ` +
+              `(${fastPeriod}/${slowPeriod}-day MA crossover):\n` +
+              `Trades: ${stats.tradeCount}\n` +
+              `Win rate: ${stats.winRatePct.toFixed(1)}%\n` +
+              `Total return: ${stats.totalReturnPct.toFixed(2)}%\n` +
+              `Max drawdown: ${stats.maxDrawdownPct.toFixed(2)}%\n\n` +
+              `Trades:\n${trades.map(formatTrade).join('\n')}`,
+          )
+        },
+      ),
+    ],
+  })
+}
