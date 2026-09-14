@@ -93,6 +93,8 @@ function sma(values, period, index) {
  * A pure function (candles in, trades out) on purpose, so a second strategy
  * can be added later as a sibling function without touching this one or the
  * engine around it.
+ *
+ * Precondition: fastPeriod must be less than slowPeriod; validation is the caller's responsibility.
  */
 export function movingAverageCrossoverStrategy(candles, { fastPeriod = 10, slowPeriod = 30 } = {}) {
   const closes = candles.map((c) => c.close)
