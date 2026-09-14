@@ -77,7 +77,7 @@ export async function fetchCandlesOnce({ host, accountId, apiKey, pair, granular
   return parseCandles(json)
 }
 
-function sma(values, period, index) {
+export function sma(values, period, index) {
   if (index < period - 1) return null
   let sum = 0
   for (let i = index - period + 1; i <= index; i++) sum += values[i]
