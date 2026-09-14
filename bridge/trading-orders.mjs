@@ -94,8 +94,19 @@ async function oandaRequest({ host, accountId, apiKey, method, path, body }) {
     method,
     body: body ? JSON.stringify(body) : undefined,
   })
+  const status = res.statusCode ?? 0
   const json = await readJsonBody(res, MAX_RESPONSE_BYTES)
-  return { status: res.statusCode ?? 0, json }
+  // OANDA's order/position endpoints return meaningful error detail in the
+  // body even on failure (validation messages, rate-limit reasons) — parsed
+  // here so it reaches the error message, not silently dropped the way a
+  // caller-side "unknown response shape" fallback would discard it.
+  if (status < 200 || status >= 300) {
+    const detail = json?.errorMessage ?? json?.rejectReason ?? JSON.stringify(json).slice(0, 200)
+    const err = new Error(`oanda request failed with status ${status}: ${detail}`)
+    err.status = status
+    throw err
+  }
+  return { status, json }
 }
 
 /**
@@ -141,6 +152,9 @@ export async function fetchAccountPL({ host, accountId, apiKey }) {
  * treating the trade as real; see parseOrderResponse's doc comment.
  */
 export async function placeMarketOrder({ host, accountId, apiKey, pair, units, stopLossPrice, clientOrderId }) {
+  if (!Number.isFinite(units) || units <= 0) {
+    throw new Error(`placeMarketOrder: units must be a positive finite number, got ${units}`)
+  }
   const { json } = await oandaRequest({
     host, accountId, apiKey, method: 'POST', path: '/orders',
     body: {
