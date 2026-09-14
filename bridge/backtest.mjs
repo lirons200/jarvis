@@ -136,12 +136,6 @@ export function movingAverageCrossoverStrategy(candles, { fastPeriod = 10, slowP
 }
 
 /**
- * Summary performance stats from a completed trade list. Drawdown is
- * tracked against the running peak balance, not the starting balance — a
- * strategy that goes up 20% then down 10% has a 10%-of-peak drawdown, not a
- * misleading "still up overall" figure.
- */
-/**
  * Scales a strategy's raw price-delta P&L into an account-currency P&L, by
  * a fixed notional position size per trade. movingAverageCrossoverStrategy
  * itself stays unit-agnostic (price delta only) so its tests can use simple
@@ -154,6 +148,12 @@ export function scaleTradesToNotional(trades, notionalUnits = DEFAULT_NOTIONAL_U
   return trades.map((t) => ({ ...t, pnl: t.pnl * notionalUnits }))
 }
 
+/**
+ * Summary performance stats from a completed trade list. Drawdown is
+ * tracked against the running peak balance, not the starting balance — a
+ * strategy that goes up 20% then down 10% has a 10%-of-peak drawdown, not a
+ * misleading "still up overall" figure.
+ */
 export function computeStats(trades, startingBalance = 10000) {
   let balance = startingBalance
   let peak = startingBalance
