@@ -21,6 +21,7 @@ import { displayServer } from './panels.mjs'
 import { uiServer } from './ui.mjs'
 import { forexServer, forexRoute, initForex } from './forex.mjs'
 import { backtestServer } from './backtest.mjs'
+import { initTrading, tradingServer, tradingControlServer } from './trading.mjs'
 import { chromeAvailable, chromeServer } from './chrome.mjs'
 import { visionServer } from './vision.mjs'
 import { homedir, tmpdir } from 'node:os'
@@ -288,6 +289,13 @@ function decideTool(name) {
     // Read-only: fetches historical data and simulates a strategy against
     // it. No account state is ever written.
     if (server === 'jarvis_backtest') return true
+
+    // Read-only status. No orders are placed by this tool.
+    if (server === 'jarvis_trading') return true
+
+    // The kill-switch. Always allowed, deliberately outside ALLOW_WRITES —
+    // halting is monotonic and safe from any caller; see trading.mjs.
+    if (server === 'jarvis_trading_control') return true
 
     const tool = mcpToolOf(name)
     if (EFFECTFUL_VERB.test(tool) && !VETO_EXEMPT.has(`${server}__${tool}`)) {
@@ -1016,6 +1024,17 @@ const wss = new WebSocketServer({
 })
 server.listen(PORT)
 
+const TRADING_CONFIG = await initTrading((text) => {
+  // Pushed to every currently-connected client. If none is connected the
+  // announcement is simply not spoken — the journal (see trading.mjs) is
+  // the actual record, so nothing is lost, only the spoken convenience.
+  for (const client of wss.clients) {
+    if (client.readyState === client.OPEN) {
+      client.send(JSON.stringify({ type: 'announce', text }))
+    }
+  }
+})
+
 console.log(`[jarvis] bridge listening on ws://localhost:${PORT}`)
 console.log(
   `[jarvis] speech ${elevenKey() ? 'via ElevenLabs (key from MCP config)' : 'using browser fallback voice'}`,
@@ -1041,6 +1060,12 @@ console.log(
   FOREX_CONFIG
     ? `[jarvis] forex feed active`
     : '[jarvis] forex feed disabled — set JARVIS_OANDA_API_KEY and JARVIS_OANDA_ACCOUNT_ID to enable',
+)
+
+console.log(
+  TRADING_CONFIG
+    ? `[jarvis] trading active`
+    : '[jarvis] trading disabled — set JARVIS_TRADING_ENABLED=true and JARVIS_TRADING_ARM=true to enable',
 )
 
 console.log(
@@ -1232,6 +1257,8 @@ wss.on('connection', (socket) => {
         jarvis_ui: uiServer((op, args) => send({ type: 'ui', op, args })),
         jarvis_forex: forexServer(),
         jarvis_backtest: backtestServer(),
+        jarvis_trading: tradingServer(),
+        jarvis_trading_control: tradingControlServer(),
         // The user's own Chrome, over the extension's native-host socket. It
         // holds no per-connection state, but it is built here with the rest so
         // the write gate is read once, at the same point as everything else.
