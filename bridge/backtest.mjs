@@ -18,7 +18,7 @@ import { resolveEnv, hostFor } from './forex.mjs'
  */
 export function parseCandles(json) {
   return (json?.candles ?? [])
-    .filter((c) => c.complete)
+    .filter((c) => c.complete && c.mid)
     .map((c) => ({
       time: c.time,
       open: Number(c.mid.o),
@@ -52,9 +52,10 @@ async function readJsonBody(res, maxBytes) {
  * used rather than bid/ask, since this phase doesn't model spread.
  */
 export async function fetchCandlesOnce({ host, accountId, apiKey, pair, granularity = 'D', count = 252 }) {
+  const clampedCount = Math.min(5000, Math.max(30, Math.round(Number(count) || 252)))
   const url = vetTarget(
     `${host}/v3/instruments/${encodeURIComponent(pair)}/candles` +
-      `?granularity=${encodeURIComponent(granularity)}&count=${count}&price=M`,
+      `?granularity=${encodeURIComponent(granularity)}&count=${clampedCount}&price=M`,
   )
   const { res } = await openRemote(
     url,
@@ -140,6 +141,19 @@ export function movingAverageCrossoverStrategy(candles, { fastPeriod = 10, slowP
  * strategy that goes up 20% then down 10% has a 10%-of-peak drawdown, not a
  * misleading "still up overall" figure.
  */
+/**
+ * Scales a strategy's raw price-delta P&L into an account-currency P&L, by
+ * a fixed notional position size per trade. movingAverageCrossoverStrategy
+ * itself stays unit-agnostic (price delta only) so its tests can use simple
+ * round numbers — this is the one place "fixed notional per trade" from the
+ * spec is actually applied, shared by both the MCP tool and the CLI script.
+ */
+const DEFAULT_NOTIONAL_UNITS = 10000 // a standard "mini lot"
+
+export function scaleTradesToNotional(trades, notionalUnits = DEFAULT_NOTIONAL_UNITS) {
+  return trades.map((t) => ({ ...t, pnl: t.pnl * notionalUnits }))
+}
+
 export function computeStats(trades, startingBalance = 10000) {
   let balance = startingBalance
   let peak = startingBalance
@@ -219,7 +233,7 @@ export function backtestServer() {
             return refuse(`"${pair}" isn't a valid instrument name, e.g. EUR_USD.`)
           }
 
-          const count = Math.min(5000, Math.max(30, Math.round(Number(args.count) || 252)))
+          const count = Number(args.count) || 252
 
           let candles
           try {
@@ -233,6 +247,14 @@ export function backtestServer() {
 
           const fastPeriod = Math.max(2, Math.round(Number(args.fast_period) || 10))
           const slowPeriod = Math.max(fastPeriod + 1, Math.round(Number(args.slow_period) || 30))
+
+          if (candles.length < slowPeriod) {
+            return ok(
+              `Not enough historical data for a ${slowPeriod}-day moving average — ` +
+                `only ${candles.length} candles available. Try a larger count or a shorter slow_period.`,
+            )
+          }
+
           const trades = movingAverageCrossoverStrategy(candles, { fastPeriod, slowPeriod })
 
           if (!trades.length) {
@@ -243,13 +265,14 @@ export function backtestServer() {
             )
           }
 
-          const stats = computeStats(trades)
+          const scaledTrades = scaleTradesToNotional(trades)
+          const stats = computeStats(scaledTrades)
           const MAX_TRADES_SHOWN = 50
-          const omitted = Math.max(0, trades.length - MAX_TRADES_SHOWN)
-          const shownTrades = trades.slice(omitted)
+          const omitted = Math.max(0, scaledTrades.length - MAX_TRADES_SHOWN)
+          const shownTrades = scaledTrades.slice(omitted)
           const tradesHeader =
             omitted > 0
-              ? `Trades (showing the most recent ${shownTrades.length} of ${trades.length}):\n`
+              ? `Trades (showing the most recent ${shownTrades.length} of ${scaledTrades.length}):\n`
               : `Trades:\n`
           return ok(
             `Backtested ${pair} over ${candles.length} daily candles ` +

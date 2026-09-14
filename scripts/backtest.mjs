@@ -9,7 +9,12 @@
  * the actual backtesting logic.
  */
 
-import { fetchCandlesOnce, movingAverageCrossoverStrategy, computeStats } from '../bridge/backtest.mjs'
+import {
+  fetchCandlesOnce,
+  movingAverageCrossoverStrategy,
+  computeStats,
+  scaleTradesToNotional,
+} from '../bridge/backtest.mjs'
 import { resolveEnv, hostFor } from '../bridge/forex.mjs'
 
 const PAIR_RE = /^[A-Z]{3}_[A-Z]{3}$/
@@ -52,15 +57,25 @@ if (!candles.length) {
 
 const fastPeriod = Math.max(2, Math.round(Number(fastArg) || 10))
 const slowPeriod = Math.max(fastPeriod + 1, Math.round(Number(slowArg) || 30))
+
+if (candles.length < slowPeriod) {
+  console.error(
+    `Not enough historical data for a ${slowPeriod}-day moving average — ` +
+      `only ${candles.length} candles available. Try a larger count or a shorter slow_period.`,
+  )
+  process.exit(1)
+}
+
 const trades = movingAverageCrossoverStrategy(candles, { fastPeriod, slowPeriod })
-const stats = computeStats(trades)
+const scaledTrades = scaleTradesToNotional(trades)
+const stats = computeStats(scaledTrades)
 
 console.log(`${pair} — ${candles.length} daily candles, ${fastPeriod}/${slowPeriod}-day MA crossover`)
 console.log(`Trades: ${stats.tradeCount}`)
 console.log(`Win rate: ${stats.winRatePct.toFixed(1)}%`)
 console.log(`Total return: ${stats.totalReturnPct.toFixed(2)}%`)
 console.log(`Max drawdown: ${stats.maxDrawdownPct.toFixed(2)}%`)
-for (const t of trades) {
+for (const t of scaledTrades) {
   console.log(
     `  ${t.entryTime.slice(0, 10)} @ ${t.entryPrice.toFixed(5)} -> ` +
       `${t.exitTime.slice(0, 10)} @ ${t.exitPrice.toFixed(5)} ` +

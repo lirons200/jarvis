@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseCandles, movingAverageCrossoverStrategy, computeStats } from './backtest.mjs'
+import { parseCandles, movingAverageCrossoverStrategy, computeStats, scaleTradesToNotional } from './backtest.mjs'
 
 test('parseCandles extracts OHLC from mid prices and drops incomplete candles', () => {
   const json = {
@@ -16,6 +16,11 @@ test('parseCandles extracts OHLC from mid prices and drops incomplete candles', 
 
 test('parseCandles tolerates a missing candles array', () => {
   assert.deepEqual(parseCandles({}), [])
+})
+
+test('parseCandles drops a candle missing its mid prices rather than throwing', () => {
+  const json = { candles: [{ time: 't1', complete: true }] } // no `mid` field
+  assert.deepEqual(parseCandles(json), [])
 })
 
 test('movingAverageCrossoverStrategy finds one trade at the known crossover points', () => {
@@ -84,4 +89,27 @@ test('computeStats tracks drawdown across a rise then a fall, not just the final
   // Balance goes 1000 -> 1200 (peak) -> 1100 (150 down from peak, not from start).
   const stats = computeStats([{ pnl: 200 }, { pnl: -100 }], 1000)
   assert.ok(Math.abs(stats.maxDrawdownPct - (100 / 1200) * 100) < 1e-9)
+})
+
+test('scaleTradesToNotional converts price-delta pnl into a currency amount', () => {
+  const scaled = scaleTradesToNotional([{ pnl: 0.002 }], 10000)
+  assert.ok(Math.abs(scaled[0].pnl - 20) < 1e-9)
+})
+
+test('scaleTradesToNotional preserves every other field on the trade', () => {
+  const trade = { entryTime: 't1', entryPrice: 1.1, exitTime: 't2', exitPrice: 1.102, pnl: 0.002 }
+  const [scaled] = scaleTradesToNotional([trade], 10000)
+  assert.equal(scaled.entryTime, 't1')
+  assert.equal(scaled.entryPrice, 1.1)
+  assert.equal(scaled.exitTime, 't2')
+  assert.equal(scaled.exitPrice, 1.102)
+})
+
+test('a realistic forex-scale backtest produces a non-zero, correctly-scaled total return', () => {
+  // A modest 20-pip move (0.002) on a 10,000-unit notional is $20 on a
+  // $10,000 starting balance — 0.2%, not the ~0.00002% a raw price-delta
+  // pnl fed straight into computeStats would produce.
+  const scaled = scaleTradesToNotional([{ pnl: 0.002 }], 10000)
+  const stats = computeStats(scaled, 10000)
+  assert.ok(Math.abs(stats.totalReturnPct - 0.2) < 1e-6)
 })
