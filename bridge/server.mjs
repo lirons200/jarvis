@@ -20,6 +20,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 import { displayServer } from './panels.mjs'
 import { uiServer } from './ui.mjs'
 import { forexServer, forexRoute, initForex } from './forex.mjs'
+import { backtestServer } from './backtest.mjs'
 import { chromeAvailable, chromeServer } from './chrome.mjs'
 import { visionServer } from './vision.mjs'
 import { homedir, tmpdir } from 'node:os'
@@ -283,6 +284,10 @@ function decideTool(name) {
     // Cached price lookups. Read-only: the poller is the only thing that
     // ever calls OANDA, this tool only reads what it already fetched.
     if (server === 'jarvis_forex') return true
+
+    // Read-only: fetches historical data and simulates a strategy against
+    // it. No account state is ever written.
+    if (server === 'jarvis_backtest') return true
 
     const tool = mcpToolOf(name)
     if (EFFECTFUL_VERB.test(tool) && !VETO_EXEMPT.has(`${server}__${tool}`)) {
@@ -1226,6 +1231,7 @@ wss.on('connection', (socket) => {
         // both name `jarvis_ui` explicitly.
         jarvis_ui: uiServer((op, args) => send({ type: 'ui', op, args })),
         jarvis_forex: forexServer(),
+        jarvis_backtest: backtestServer(),
         // The user's own Chrome, over the extension's native-host socket. It
         // holds no per-connection state, but it is built here with the rest so
         // the write gate is read once, at the same point as everything else.
