@@ -368,7 +368,9 @@ export default function App() {
     watchBlades((blade) => store.getState().pushBlade(blade))
     watchAnnounce((text) => {
       store.getState().pushTurn({ id: newId(), role: 'jarvis', text })
+      silence()
       const spk = createSpeaker()
+      speaker.current = spk
       spk.say(text)
     })
 
