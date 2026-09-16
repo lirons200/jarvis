@@ -483,6 +483,42 @@ export async function initTrading(onAnnounce) {
   }
 }
 
+/**
+ * Plain-text status report — armed/halted state, today's P&L against the
+ * cap, recent journal activity. Extracted so both the trading_status MCP
+ * tool and the Telegram `status` command call this exact same logic,
+ * rather than each having their own copy that could drift apart.
+ */
+export async function getTradingStatusText() {
+  const tail = await readJournalTail(JOURNAL_PATH, 5)
+  const lines = [
+    state.armed ? (state.halted ? `Halted — ${state.haltReason}` : 'Armed and running') : 'Not armed',
+  ]
+  if (state.armed && state.config && state.dayKey !== null) {
+    try {
+      const { realizedPL, unrealizedPL } = await fetchAccountPL(state.config)
+      const dailyRealizedPL = realizedPL - state.dayStartRealizedPL
+      lines.push(`Today's P&L: ${(dailyRealizedPL + unrealizedPL).toFixed(2)} against a ${state.config.maxDailyLoss} loss cap`)
+    } catch (err) {
+      lines.push(`Could not fetch current P&L: ${err.message}`)
+    }
+  } else if (state.armed) {
+    lines.push("Today's P&L: not yet established")
+  }
+  lines.push(`Recent activity: ${tail.length ? tail.map((e) => `${e.pair} ${e.event}`).join(', ') : 'none'}`)
+  return lines.join('. ')
+}
+
+/**
+ * Halts trading, tagging the log line with who triggered it (`'voice'`,
+ * `'telegram'`) — extracted for the same reason as getTradingStatusText,
+ * and so a future caller (a scheduled safety check, say) has an obvious
+ * place to hook in without duplicating haltTrading's own logic.
+ */
+export function triggerHalt(source) {
+  haltTrading(`halted via ${source}`)
+}
+
 export function tradingServer() {
   return createSdkMcpServer({
     name: 'jarvis_trading',
@@ -490,27 +526,8 @@ export function tradingServer() {
     instructions: 'Read-only status for the autonomous forex trading loop.',
     tools: [
       tool('trading_status', 'Report whether autonomous trading is armed, halted, and today\'s P&L.', {}, async () => {
-        const tail = await readJournalTail(JOURNAL_PATH, 5)
-        const lines = [
-          state.armed ? (state.halted ? `Halted — ${state.haltReason}` : 'Armed and running') : 'Not armed',
-        ]
-        // dayKey is only set once a pollOnce tick has successfully fetched the
-        // account P&L. Before that (right after boot, or for the whole of an
-        // OANDA outage) dayStartRealizedPL is still 0, so reporting
-        // realizedPL - 0 would present the account's LIFETIME P&L as "today's".
-        if (state.armed && state.config && state.dayKey !== null) {
-          try {
-            const { realizedPL, unrealizedPL } = await fetchAccountPL(state.config)
-            const dailyRealizedPL = realizedPL - state.dayStartRealizedPL
-            lines.push(`Today's P&L: ${(dailyRealizedPL + unrealizedPL).toFixed(2)} against a ${state.config.maxDailyLoss} loss cap`)
-          } catch (err) {
-            lines.push(`Could not fetch current P&L: ${err.message}`)
-          }
-        } else if (state.armed) {
-          lines.push("Today's P&L: not yet established")
-        }
-        lines.push(`Recent activity: ${tail.length ? tail.map((e) => `${e.pair} ${e.event}`).join(', ') : 'none'}`)
-        return { content: [{ type: 'text', text: lines.join('. ') }] }
+        const text = await getTradingStatusText()
+        return { content: [{ type: 'text', text }] }
       }),
     ],
   })
@@ -523,7 +540,7 @@ export function tradingControlServer() {
     instructions: 'The trading kill-switch. Always available, regardless of write permissions.',
     tools: [
       tool('trading_halt', 'Immediately stop autonomous trading. Existing stop-losses stay in place.', {}, async () => {
-        haltTrading('halted by voice command')
+        triggerHalt('voice command')
         return { content: [{ type: 'text', text: 'Trading halted. Existing positions keep their stop-losses.' }] }
       }),
     ],
