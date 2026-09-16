@@ -45,12 +45,25 @@ async function readJsonBody(res, maxBytes) {
     }
     chunks.push(chunk)
   }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  } catch (err) {
+    // A non-JSON body (an HTML error page from a proxy, say) must not leak
+    // the socket — net.mjs's own fetchText is careful about exactly this.
+    res.destroy()
+    throw err
+  }
 }
+
+/** Bounds how many updates one poll can return — without this, a very
+ *  large backlog (e.g. after a long outage) would be re-fetched in full on
+ *  every tick if it ever exceeded MAX_RESPONSE_BYTES, since a failed parse
+ *  doesn't advance updateOffset. */
+const UPDATES_PER_POLL = 20
 
 async function getUpdates(token, offset) {
   const url = vetTarget(
-    `https://api.telegram.org/bot${token}/getUpdates?timeout=${POLL_WAIT_S}&offset=${offset}`,
+    `https://api.telegram.org/bot${token}/getUpdates?timeout=${POLL_WAIT_S}&offset=${offset}&limit=${UPDATES_PER_POLL}`,
   )
   const { res } = await openRemote(
     url,
@@ -162,5 +175,9 @@ export function initTelegram() {
   sendToConfiguredChat = (text) => sendMessage(token, chatId, text)
   startPolling(token, chatId)
   console.log('[jarvis:telegram] bot active')
-  return { token, chatId }
+  // Deliberately omits the token — every caller only ever checks this for
+  // truthiness (server.mjs's `if (TELEGRAM_CONFIG)`), so there's no reason
+  // for the secret to live in a module-level binding a future stray
+  // console.log could expose.
+  return { chatId }
 }

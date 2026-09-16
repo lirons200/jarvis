@@ -158,10 +158,11 @@ export async function fetchAccountPL({ host, accountId, apiKey }) {
  * The stop is attached by DISTANCE, not absolute price: OANDA's
  * StopLossDetails supports a `distance` field, which prices the stop
  * relative to wherever this FOK market order actually fills, rather than
- * off a possibly-stale candle close. NOTE: the exact field name `distance`
- * on StopLossDetails was not freshly re-verified against live OANDA docs
- * this session — confirm before trusting against a live account, same
- * caution already applied to the candles endpoint in phase 3.
+ * off a possibly-stale candle close. Verified 2026-09-16 against a real
+ * OANDA practice account: a 10-unit EUR_USD order with a `distance`-based
+ * stop filled, and fetchOpenTradesStopLossStatus immediately confirmed the
+ * stop-loss was attached — see docs/superpowers/plans/2026-09-14-forex-trading.md
+ * Task 12 verification notes.
  */
 export async function placeMarketOrder({ host, accountId, apiKey, pair, units, stopLossDistance, clientOrderId }) {
   if (!Number.isFinite(units) || units <= 0) {
@@ -230,11 +231,10 @@ export function aggregateStopLossStatus(tradesJson, ordersJson) {
  * (even ones this same bot protected correctly moments ago) as unprotected
  * on every restart.
  *
- * NOTE: exact OANDA v20 field names here (openTrades trade shape,
- * pendingOrders STOP_LOSS order's tradeID linkage) were not freshly
- * re-verified against live OANDA docs this session — confirm against
- * current docs before trusting this in production, same caution already
- * applied to the candles endpoint in phase 3.
+ * Verified 2026-09-16 against a real OANDA practice account: after a live
+ * fill, this correctly reported `hasStopLoss: true` for the new trade,
+ * confirming both the `openTrades` trade shape and the `pendingOrders`
+ * STOP_LOSS order's `tradeID` linkage assumed below are correct.
  */
 export async function fetchOpenTradesStopLossStatus({ host, accountId, apiKey }) {
   const [tradesRes, ordersRes] = await Promise.all([
