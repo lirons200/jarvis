@@ -100,6 +100,13 @@ export function watchUi(fn: (op: string, args: any) => void) {
   onUi = fn
 }
 
+/** Trade announcements — pushed outside the normal turn flow, spoken
+ *  immediately rather than waiting for a question. */
+let onAnnounce: ((text: string) => void) | null = null
+export function watchAnnounce(fn: (text: string) => void) {
+  onAnnounce = fn
+}
+
 /**
  * Connection state, for the UI.
  *
@@ -207,6 +214,8 @@ function dispatch(ws: WebSocket) {
       // A `ui` frame with no args is normal — reset and clear take none — so an
       // absent args object is an empty one, not a reason to drop the command.
       onUi?.(msg.op, (msg.args ?? {}) as Record<string, unknown>)
+    } else if (msg.type === 'announce' && msg.text) {
+      onAnnounce?.(msg.text)
     }
   })
 }

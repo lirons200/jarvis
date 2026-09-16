@@ -69,6 +69,12 @@ export function watchUi(fn: (op: string, args: any) => void): void {
   if (usingBridge) bridge.watchUi(fn)
 }
 
+/** Trade announcements — like panels and ui commands, pushed mid-turn from the
+ *  background forex poller rather than returned by ask(). Bridge-only. */
+export function watchAnnounce(fn: (text: string) => void): void {
+  if (usingBridge) bridge.watchAnnounce(fn)
+}
+
 /**
  * The one thing the bridge asks US for.
  *

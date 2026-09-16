@@ -22,6 +22,7 @@ import {
   watchServers,
   watchPanels,
   watchBlades,
+  watchAnnounce,
   watchCapture,
   watchUi,
   watchConnection,
@@ -365,6 +366,11 @@ export default function App() {
     watchServers((servers) => store.getState().setConnected(servers))
     watchPanels((panel) => store.getState().pushPanel(panel))
     watchBlades((blade) => store.getState().pushBlade(blade))
+    watchAnnounce((text) => {
+      store.getState().pushTurn({ id: newId(), role: 'jarvis', text })
+      const spk = createSpeaker()
+      spk.say(text)
+    })
 
     /**
      * JARVIS asking to see something.
