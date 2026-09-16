@@ -239,6 +239,14 @@ Everything is optional in bridge mode. Frontend settings live in `.env.local`
 | `JARVIS_OANDA_ALLOW_LIVE` | unset | Must be `true` for `JARVIS_OANDA_ENV=live` to start — a safety rail against accidentally polling a real-money account. |
 | `JARVIS_FOREX_PAIRS` | `EUR_USD,GBP_USD,USD_JPY` | Comma-separated OANDA instrument names to poll. |
 | `JARVIS_FOREX_POLL_INTERVAL_MS` | `10000` | Poll interval, clamped to 2000-60000ms. |
+| `JARVIS_TRADING_ENABLED` | unset | Must be `true` for the trading poller to start at all. |
+| `JARVIS_TRADING_ARM` | unset | Must be `true` at every boot for trading to actually run — never persisted, a restart always comes up halted without it. |
+| `JARVIS_TRADING_PAIRS` | — | Comma-separated pairs to trade, e.g. `EUR_USD,GBP_USD`. Required if trading is enabled. |
+| `JARVIS_TRADING_MAX_POSITION_UNITS` | — | Hard cap on units per trade. Required. |
+| `JARVIS_TRADING_MAX_TOTAL_UNITS` | — | Hard cap on summed units across all open positions. Required. |
+| `JARVIS_TRADING_MAX_DAILY_LOSS` | — | Account-currency loss amount that halts trading for the rest of the day. Required. |
+| `JARVIS_TRADING_ATR_STOP_MULTIPLIER` | — | Stop-loss distance as a multiple of the 14-period ATR. Required. |
+| `JARVIS_TRADING_POLL_INTERVAL_MS` | — | How often the trading loop sweeps all pairs. Required. |
 
 ### Backtesting
 
@@ -274,6 +282,30 @@ You do not have to touch a flag. Either:
 
 Either way, `/health` starts reporting the capability, the browser picks it up on
 the next boot, and both the voice and transcription upgrade automatically.
+
+### ⚠️ Autonomous trading
+
+Phase 4 lets JARVIS place real OANDA orders on its own, using the same
+moving-average-crossover strategy as backtesting. This is off by default
+and stays off unless you explicitly set THREE things:
+
+```bash
+JARVIS_TRADING_ENABLED=true
+JARVIS_TRADING_ARM=true          # required at EVERY boot — never persisted
+JARVIS_OANDA_ALLOW_LIVE=true     # only if you want real money, not practice
+```
+
+Say "Jarvis, stop trading" at any time — `trading_halt` is always available
+and stops the loop immediately, regardless of any other permission setting.
+Existing positions keep their stop-losses either way; halting only stops
+new entries. Resuming after a halt requires restarting the bridge with
+`JARVIS_TRADING_ARM=true` set again — there is no in-conversation resume,
+by design.
+
+**Test against the OANDA practice account first, extensively, before ever
+setting `JARVIS_OANDA_ALLOW_LIVE=true` here.** See
+`docs/superpowers/specs/2026-09-14-forex-trading-design.md` for the full
+safety design.
 
 ---
 
