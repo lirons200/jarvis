@@ -258,6 +258,9 @@ async function pollOnce(config) {
           // unchanged for a whole trading day while the poller re-evaluates every
           // pollIntervalMs. Latch per pair on the signal's candle so a failed or
           // blocked entry is attempted (and announced) once, not on every tick.
+          // Note: this means an entry blocked by the exposure limit will not retry
+          // even if exposure frees up later the same day — it waits for the next
+          // day's candle, matching the daily-candle cadence this strategy runs on.
           const signalTime = candles[candles.length - 1].time
           if (state.attemptedSignals[pair] === signalTime) continue
 
@@ -288,6 +291,11 @@ async function pollOnce(config) {
           const precision = await fetchInstrumentPrecision({ ...config, pair })
           const clientOrderId = buildClientOrderId(pair, signalTime)
 
+          // A halt can arrive during this pair's own earlier awaits (pricing
+          // check, precision fetch). The loop-top check only stops the NEXT
+          // pair — this catches the order currently in flight before it goes out.
+          if (state.halted) continue
+
           const result = await placeMarketOrder({
             ...config, pair,
             units: config.maxPositionUnits,
@@ -310,10 +318,21 @@ async function pollOnce(config) {
             // pieces of state that a follow-up query might observe before both have
             // settled; a single retry cheaply avoids treating that race as a real
             // safety failure while still catching a genuinely rejected stop quickly.
-            let confirmed = (await fetchOpenTradesStopLossStatus(config))[pair]?.hasStopLoss === true
-            if (!confirmed) {
-              await new Promise((resolve) => setTimeout(resolve, 800))
+            let confirmed
+            try {
               confirmed = (await fetchOpenTradesStopLossStatus(config))[pair]?.hasStopLoss === true
+              if (!confirmed) {
+                await new Promise((resolve) => setTimeout(resolve, 800))
+                confirmed = (await fetchOpenTradesStopLossStatus(config))[pair]?.hasStopLoss === true
+              }
+            } catch (verifyErr) {
+              // A throw here means we genuinely don't know whether the fill is
+              // protected — that is exactly as dangerous as a confirmed "no", not
+              // something to shrug off to the per-pair catch and keep trading.
+              // Treat it identically to an unconfirmed stop-loss so it routes into
+              // the same halt-and-close path below.
+              console.error(`[jarvis:trading] could not verify stop-loss for ${pair}: ${verifyErr.message} — treating as unprotected`)
+              confirmed = false
             }
             state.hasStopLoss[pair] = confirmed
             if (confirmed) {
@@ -475,7 +494,11 @@ export function tradingServer() {
         const lines = [
           state.armed ? (state.halted ? `Halted — ${state.haltReason}` : 'Armed and running') : 'Not armed',
         ]
-        if (state.armed && state.config) {
+        // dayKey is only set once a pollOnce tick has successfully fetched the
+        // account P&L. Before that (right after boot, or for the whole of an
+        // OANDA outage) dayStartRealizedPL is still 0, so reporting
+        // realizedPL - 0 would present the account's LIFETIME P&L as "today's".
+        if (state.armed && state.config && state.dayKey !== null) {
           try {
             const { realizedPL, unrealizedPL } = await fetchAccountPL(state.config)
             const dailyRealizedPL = realizedPL - state.dayStartRealizedPL
@@ -483,6 +506,8 @@ export function tradingServer() {
           } catch (err) {
             lines.push(`Could not fetch current P&L: ${err.message}`)
           }
+        } else if (state.armed) {
+          lines.push("Today's P&L: not yet established")
         }
         lines.push(`Recent activity: ${tail.length ? tail.map((e) => `${e.pair} ${e.event}`).join(', ') : 'none'}`)
         return { content: [{ type: 'text', text: lines.join('. ') }] }
