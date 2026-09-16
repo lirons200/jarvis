@@ -60,6 +60,12 @@ export function formatStopPrice(price, precision) {
  * accepted orders even if a check-then-act race slips past the in-process
  * lock — OANDA itself rejects a duplicate clientExtensions.id, which is
  * the real backstop, not just the in-memory guard.
+ *
+ * Truncates `signalTime` to its date (YYYY-MM-DD), which is only correct
+ * because the strategy trades on DAILY candles — one signal per pair per
+ * day is the actual invariant this enforces. If the strategy ever moves to
+ * a shorter candle granularity, this must use the full timestamp instead,
+ * or every legitimate same-day re-entry would be rejected as a duplicate.
  */
 export function buildClientOrderId(pair, signalTime) {
   return `jarvis-${pair}-${String(signalTime).slice(0, 10)}`
