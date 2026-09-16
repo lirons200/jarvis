@@ -247,6 +247,8 @@ Everything is optional in bridge mode. Frontend settings live in `.env.local`
 | `JARVIS_TRADING_MAX_DAILY_LOSS` | — | Account-currency loss amount that halts trading for the rest of the day. Required. |
 | `JARVIS_TRADING_ATR_STOP_MULTIPLIER` | — | Stop-loss distance as a multiple of the 14-period ATR. Required. |
 | `JARVIS_TRADING_POLL_INTERVAL_MS` | — | How often the trading loop sweeps all pairs. Required. |
+| `JARVIS_TELEGRAM_BOT_TOKEN` | unset | Telegram bot token from @BotFather. Unset disables the Telegram bot entirely. |
+| `JARVIS_TELEGRAM_CHAT_ID` | unset | The one chat id the bot will respond to — messages from any other chat are silently ignored. |
 
 ### Backtesting
 
@@ -316,6 +318,27 @@ by design.
 setting `JARVIS_OANDA_ALLOW_LIVE=true` here.** See
 `docs/superpowers/specs/2026-09-14-forex-trading-design.md` for the full
 safety design.
+
+### Telegram remote control
+
+Monitor and control autonomous trading from Telegram — get trade
+announcements as messages, and message the bot `status` or `halt`
+from anywhere.
+
+1. Message [@BotFather](https://t.me/BotFather) on Telegram, send `/newbot`,
+   follow the prompts — you'll get a bot token.
+2. Message your new bot anything, then visit
+   `https://api.telegram.org/bot<your-token>/getUpdates` in a browser to find
+   your numeric chat id in the response.
+3. Set both env vars:
+
+```bash
+JARVIS_TELEGRAM_BOT_TOKEN=<token from BotFather>
+JARVIS_TELEGRAM_CHAT_ID=<your numeric chat id>
+```
+
+Message the bot `status` or `halt` at any time. Anyone else who messages the
+bot is silently ignored — it only ever responds to the one configured chat.
 
 ---
 
