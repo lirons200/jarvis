@@ -8,6 +8,8 @@
  * transport.
  */
 
+import { openRemote, vetTarget, PROXY_UA } from './net.mjs'
+
 /**
  * "status", "/status", "  Status  " all recognised — Telegram clients
  * commonly send commands with a leading slash, but plain text is friendlier
@@ -25,8 +27,6 @@ export function isAuthorizedChat(chatId, allowedChatId) {
   if (chatId === undefined || chatId === null) return false
   return String(chatId) === String(allowedChatId)
 }
-
-import { openRemote, vetTarget, PROXY_UA } from './net.mjs'
 
 const FETCH_TIMEOUT_MS = 30_000
 const MAX_RESPONSE_BYTES = 1024 * 1024
