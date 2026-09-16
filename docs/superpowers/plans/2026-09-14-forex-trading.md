@@ -1376,7 +1376,7 @@ npm run bridge
 
 - [ ] **Step 2: Verify the kill-switch**
 
-With the app running, say "Jarvis, stop trading" (or call `trading_halt` directly via the MCP tool if testing headless). Confirm the bridge logs `[jarvis:trading] HALTED — halted by voice command` and `trading_status` subsequently reports "Halted".
+With the app running, say "Jarvis, stop trading" (or call `trading_halt` directly via the MCP tool if testing headless). Confirm the bridge logs `[jarvis:trading] HALTED — halted via voice command` and `trading_status` subsequently reports "Halted".
 
 - [ ] **Step 3: Verify boot reconciliation**
 

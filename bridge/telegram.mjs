@@ -110,7 +110,11 @@ async function pollOnce(token, chatId) {
     console.error(`[jarvis:telegram] poll failed: ${err.message}`)
     return
   }
-  for (const update of data?.result ?? []) {
+  if (data?.ok !== true) {
+    console.error(`[jarvis:telegram] Telegram API error: ${data?.description ?? 'unknown error'} — check JARVIS_TELEGRAM_BOT_TOKEN`)
+    return
+  }
+  for (const update of data.result ?? []) {
     updateOffset = update.update_id + 1
     const msg = update.message
     if (!msg?.text) continue

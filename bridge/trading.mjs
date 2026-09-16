@@ -494,6 +494,10 @@ export async function getTradingStatusText() {
   const lines = [
     state.armed ? (state.halted ? `Halted — ${state.haltReason}` : 'Armed and running') : 'Not armed',
   ]
+  // dayKey is only set once a pollOnce tick has successfully fetched the
+  // account P&L. Before that (right after boot, or for the whole of an
+  // OANDA outage) dayStartRealizedPL is still 0, so reporting
+  // realizedPL - 0 would present the account's LIFETIME P&L as "today's".
   if (state.armed && state.config && state.dayKey !== null) {
     try {
       const { realizedPL, unrealizedPL } = await fetchAccountPL(state.config)

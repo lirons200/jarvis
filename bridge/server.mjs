@@ -1503,15 +1503,6 @@ wss.on('connection', (socket) => {
 // client connecting during the await would fire 'connection' with no
 // listener attached, and the event — Node's plain EventEmitter doesn't queue
 // past emissions — would be silently lost.
-const TELEGRAM_CONFIG = initTelegram()
-if (TELEGRAM_CONFIG) {
-  registerCommand('status', async () => getTradingStatusText())
-  registerCommand('halt', async () => {
-    triggerHalt('telegram')
-    return 'Trading halted. Existing positions keep their stop-losses.'
-  })
-}
-
 const TRADING_CONFIG = await initTrading((text) => {
   // Pushed to every currently-connected client. If none is connected the
   // announcement is simply not spoken — the journal (see trading.mjs) is
@@ -1533,6 +1524,15 @@ console.log(
     ? `[jarvis] trading active`
     : '[jarvis] trading disabled — set JARVIS_TRADING_ENABLED=true and JARVIS_TRADING_ARM=true to enable',
 )
+
+const TELEGRAM_CONFIG = initTelegram()
+if (TELEGRAM_CONFIG) {
+  registerCommand('status', async () => getTradingStatusText())
+  registerCommand('halt', async () => {
+    triggerHalt('telegram')
+    return 'Trading halted. Existing positions keep their stop-losses.'
+  })
+}
 
 console.log(
   TELEGRAM_CONFIG
