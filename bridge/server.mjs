@@ -21,7 +21,8 @@ import { displayServer } from './panels.mjs'
 import { uiServer } from './ui.mjs'
 import { forexServer, forexRoute, initForex } from './forex.mjs'
 import { backtestServer } from './backtest.mjs'
-import { initTrading, tradingServer, tradingControlServer } from './trading.mjs'
+import { initTrading, tradingServer, tradingControlServer, getTradingStatusText, triggerHalt } from './trading.mjs'
+import { initTelegram, registerCommand, announceToTelegram } from './telegram.mjs'
 import { chromeAvailable, chromeServer } from './chrome.mjs'
 import { visionServer } from './vision.mjs'
 import { homedir, tmpdir } from 'node:os'
@@ -1502,6 +1503,15 @@ wss.on('connection', (socket) => {
 // client connecting during the await would fire 'connection' with no
 // listener attached, and the event — Node's plain EventEmitter doesn't queue
 // past emissions — would be silently lost.
+const TELEGRAM_CONFIG = initTelegram()
+if (TELEGRAM_CONFIG) {
+  registerCommand('status', async () => getTradingStatusText())
+  registerCommand('halt', async () => {
+    triggerHalt('telegram')
+    return 'Trading halted. Existing positions keep their stop-losses.'
+  })
+}
+
 const TRADING_CONFIG = await initTrading((text) => {
   // Pushed to every currently-connected client. If none is connected the
   // announcement is simply not spoken — the journal (see trading.mjs) is
@@ -1515,10 +1525,17 @@ const TRADING_CONFIG = await initTrading((text) => {
       }
     }
   }
+  void announceToTelegram(text)
 })
 
 console.log(
   TRADING_CONFIG
     ? `[jarvis] trading active`
     : '[jarvis] trading disabled — set JARVIS_TRADING_ENABLED=true and JARVIS_TRADING_ARM=true to enable',
+)
+
+console.log(
+  TELEGRAM_CONFIG
+    ? '[jarvis] telegram remote control active'
+    : '[jarvis] telegram remote control disabled — set JARVIS_TELEGRAM_BOT_TOKEN and JARVIS_TELEGRAM_CHAT_ID to enable',
 )
