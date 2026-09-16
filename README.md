@@ -296,9 +296,19 @@ JARVIS_OANDA_ALLOW_LIVE=true     # only if you want real money, not practice
 ```
 
 Say "Jarvis, stop trading" at any time — `trading_halt` is always available
-and stops the loop immediately, regardless of any other permission setting.
-Existing positions keep their stop-losses either way; halting only stops
-new entries. Resuming after a halt requires restarting the bridge with
+and stops the loop as soon as the current pair being evaluated finishes — no
+new pairs are started, and no new entries are ever placed — regardless of any
+other permission setting. Existing positions keep their stop-losses either
+way; halting mainly stops new entries, but it can also happen automatically
+mid-entry if a filled order's stop-loss can't be confirmed, in which case the
+bot closes that position immediately as part of halting.
+
+The strategy trades on **daily candles** by design, so
+`JARVIS_TRADING_POLL_INTERVAL_MS` controls how often the bot re-checks for a
+new daily signal, not how often it makes trading decisions on shorter
+timeframes — a short poll interval does not create more trades.
+
+Resuming after a halt requires restarting the bridge with
 `JARVIS_TRADING_ARM=true` set again — there is no in-conversation resume,
 by design.
 
