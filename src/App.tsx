@@ -161,7 +161,7 @@ export default function App() {
             music.working(false)
             store.getState().pushTurn({ id: turnId, role: 'jarvis', text: '' })
           }
-          store.getState().appendToLastTurn(delta)
+          store.getState().appendToLastTurn(turnId, delta)
           spk.push(delta)
         },
         onTool: (name) => {

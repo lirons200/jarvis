@@ -253,6 +253,17 @@ async function pollOnce(config) {
         const signal = detectLiveSignal(candles, currentPosition, config)
         if (signal === 'none') continue
 
+        // A short here is unexpected for a long-only strategy — boot
+        // reconciliation already warns loudly about it (reconcileOpenPositions'
+        // unexpectedShorts), but a warning at boot doesn't stop a LATER manual
+        // short from appearing mid-session. Refuse to open a new long into a
+        // pair that already carries short exposure rather than silently
+        // proceeding as if the pair were flat.
+        if (signal === 'enter' && openPositions[pair]?.shortUnits) {
+          console.error(`[jarvis:trading] skipping ${pair} entry — an existing short position was found; this strategy is long-only and will not trade this pair until the short is resolved manually`)
+          continue
+        }
+
         if (signal === 'enter') {
           // The strategy runs on daily candles, so one crossover signal persists
           // unchanged for a whole trading day while the poller re-evaluates every
@@ -264,7 +275,13 @@ async function pollOnce(config) {
           const signalTime = candles[candles.length - 1].time
           if (state.attemptedSignals[pair] === signalTime) continue
 
-          const totalOpenUnits = Object.values(openPositions).reduce((sum, p) => sum + p.longUnits, 0)
+          // Gross exposure — both sides. Only long units are ever opened by
+          // this strategy, but an existing manual short still represents
+          // real capital at risk and must count toward the cap.
+          const totalOpenUnits = Object.values(openPositions).reduce(
+            (sum, p) => sum + p.longUnits + Math.abs(p.shortUnits),
+            0,
+          )
           if (!checkTotalExposure(totalOpenUnits, config.maxPositionUnits, config.maxTotalUnits)) {
             state.attemptedSignals[pair] = signalTime
             await announce(`Skipped a ${pair} entry — it would exceed the total exposure limit.`)
@@ -346,8 +363,13 @@ async function pollOnce(config) {
               haltTrading(`${pair} filled without a confirmed stop-loss — closing immediately`)
               await journal({ pair, event: 'enter', ...result, stopLossConfirmed: false })
               try {
-                await closeLongPosition({ ...config, pair })
-                await journal({ pair, event: 'closed-unprotected' })
+                const closeResult = await closeLongPosition({ ...config, pair })
+                if (closeResult.closed) {
+                  await journal({ pair, event: 'closed-unprotected' })
+                } else {
+                  console.error(`[jarvis:trading] CRITICAL — close for unprotected ${pair} position did not confirm: ${closeResult.reason}. Manual intervention required.`)
+                  await journal({ pair, event: 'close-unprotected-failed', reason: closeResult.reason })
+                }
               } catch (closeErr) {
                 console.error(`[jarvis:trading] CRITICAL — could not close unprotected ${pair} position: ${closeErr.message}. Manual intervention required.`)
                 await journal({ pair, event: 'close-unprotected-failed', error: closeErr.message })
@@ -362,9 +384,19 @@ async function pollOnce(config) {
           // Deliberately NOT latched like entries: an exit must keep being
           // attempted every tick until the position is actually closed.
           const closeResult = await closeLongPosition({ ...config, pair })
-          await journal({ pair, event: 'exit', result: closeResult })
-          delete state.hasStopLoss[pair]
-          await announce(`Closed the ${pair} position.`)
+          if (closeResult.closed) {
+            await journal({ pair, event: 'exit' })
+            delete state.hasStopLoss[pair]
+            await announce(`Closed the ${pair} position.`)
+          } else {
+            // Not confirmed — say nothing and change nothing. The next tick
+            // will see the same real (still-open) OANDA position and retry
+            // the close automatically; a false "Closed" announcement here
+            // would be exactly the kind of unconfirmed success the entry
+            // path's fill verification exists to avoid.
+            console.error(`[jarvis:trading] ${pair} close did not confirm: ${closeResult.reason} — will retry next tick`)
+            await journal({ pair, event: 'exit-unconfirmed', reason: closeResult.reason })
+          }
         }
       } catch (pairErr) {
         console.error(`[jarvis:trading] ${pair} failed this sweep: ${pairErr.message}`)

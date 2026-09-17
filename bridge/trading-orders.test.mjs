@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseOrderResponse, formatStopPrice, buildClientOrderId, aggregateStopLossStatus } from './trading-orders.mjs'
+import { parseOrderResponse, formatStopPrice, buildClientOrderId, aggregateStopLossStatus, parseCloseResponse } from './trading-orders.mjs'
 
 test('parseOrderResponse reports a fill from orderFillTransaction', () => {
   const json = {
@@ -130,4 +130,29 @@ test('aggregateStopLossStatus handles multiple instruments independently', () =>
 test('aggregateStopLossStatus tolerates missing trades/orders arrays', () => {
   assert.deepEqual(aggregateStopLossStatus({}, {}), {})
   assert.deepEqual(aggregateStopLossStatus(null, null), {})
+})
+
+test('parseCloseResponse reports a confirmed close from longOrderFillTransaction', () => {
+  const json = { longOrderFillTransaction: { id: '2468', type: 'ORDER_FILL' } }
+  assert.deepEqual(parseCloseResponse(json), { closed: true })
+})
+
+test('parseCloseResponse reports an unconfirmed close from longOrderCancelTransaction', () => {
+  const json = { longOrderCancelTransaction: { reason: 'MARKET_HALTED' } }
+  const result = parseCloseResponse(json)
+  assert.equal(result.closed, false)
+  assert.equal(result.reason, 'MARKET_HALTED')
+})
+
+test('parseCloseResponse reports an unconfirmed close from an error response', () => {
+  const json = { errorMessage: 'Position not found' }
+  const result = parseCloseResponse(json)
+  assert.equal(result.closed, false)
+  assert.equal(result.reason, 'Position not found')
+})
+
+test('parseCloseResponse treats an unrecognised shape as unconfirmed rather than throwing', () => {
+  const result = parseCloseResponse({})
+  assert.equal(result.closed, false)
+  assert.equal(result.reason, 'unknown response shape')
 })

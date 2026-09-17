@@ -531,7 +531,7 @@ In `README.md`'s `### Bridge` config table, add:
 
 Add a `### Telegram remote control` section after the `### ⚠️ Autonomous trading` section:
 
-```markdown
+````markdown
 ### Telegram remote control
 
 Monitor and control autonomous trading from Telegram — get trade
@@ -552,7 +552,7 @@ JARVIS_TELEGRAM_CHAT_ID=<your numeric chat id>
 
 Message the bot `status` or `halt` at any time. Anyone else who messages the
 bot is silently ignored — it only ever responds to the one configured chat.
-```
+````
 
 - [ ] **Step 3: Commit**
 

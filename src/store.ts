@@ -267,7 +267,7 @@ type State = {
   setError: (e: string | null) => void
   setConnected: (c: string[]) => void
   pushTurn: (t: Turn) => void
-  appendToLastTurn: (text: string) => void
+  appendToLastTurn: (id: string, text: string) => void
 
   applyUi: (patch: UiPatch) => void
   addOrbit: (o: OrbitObject) => void
@@ -362,11 +362,16 @@ export const useStore = create<State>((set) => ({
   setError: (error) => set({ error }),
   setConnected: (connected) => set({ connected }),
   pushTurn: (turn) => set((s) => ({ turns: [...s.turns.slice(-40), turn] })),
-  appendToLastTurn: (text) =>
+  // Targeted by id, not just "whichever turn is last" — a proactive
+  // announcement (e.g. an autonomous trade) also pushes a role:'jarvis'
+  // turn, and if one lands between two streamed deltas of an answer
+  // already in flight, appending by position alone would silently redirect
+  // the rest of that answer onto the announcement instead.
+  appendToLastTurn: (id, text) =>
     set((s) => {
       const turns = [...s.turns]
       const last = turns[turns.length - 1]
-      if (!last || last.role !== 'jarvis') return {}
+      if (!last || last.role !== 'jarvis' || last.id !== id) return {}
       turns[turns.length - 1] = { ...last, text: last.text + text }
       return { turns }
     }),

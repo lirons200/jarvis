@@ -191,14 +191,36 @@ export async function placeMarketOrder({ host, accountId, apiKey, pair, units, s
   return parseOrderResponse(json)
 }
 
-/** Closes the entire long position for one instrument. */
+/**
+ * A 200 from OANDA's close-position endpoint does NOT mean the close
+ * confirmed — the response body carries `longOrderFillTransaction` on a
+ * real close, or `longOrderCancelTransaction`/an error shape if it didn't
+ * go through (verified against a real OANDA practice account: a confirmed
+ * close's response includes `longOrderFillTransaction`). Callers must
+ * check `.closed` before treating the position as actually flat — a
+ * rejected close journaled/announced as "closed" would be exactly the
+ * kind of false confirmation the entry-side fill parsing was built to
+ * avoid.
+ */
+export function parseCloseResponse(json) {
+  if (json?.longOrderFillTransaction) return { closed: true }
+  if (json?.longOrderCancelTransaction) {
+    return { closed: false, reason: json.longOrderCancelTransaction.reason ?? 'cancelled' }
+  }
+  if (json?.errorMessage) return { closed: false, reason: json.errorMessage }
+  return { closed: false, reason: 'unknown response shape' }
+}
+
+/** Closes the entire long position for one instrument. Returns
+ *  parseCloseResponse's result — callers must check `.closed` before
+ *  treating the position as flat; see parseCloseResponse's doc comment. */
 export async function closeLongPosition({ host, accountId, apiKey, pair }) {
   const { json } = await oandaRequest({
     host, accountId, apiKey, method: 'PUT',
     path: `/positions/${encodeURIComponent(pair)}/close`,
     body: { longUnits: 'ALL' },
   })
-  return json
+  return parseCloseResponse(json)
 }
 
 /**

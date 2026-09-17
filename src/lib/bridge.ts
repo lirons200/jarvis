@@ -214,7 +214,7 @@ function dispatch(ws: WebSocket) {
       // A `ui` frame with no args is normal — reset and clear take none — so an
       // absent args object is an empty one, not a reason to drop the command.
       onUi?.(msg.op, (msg.args ?? {}) as Record<string, unknown>)
-    } else if (msg.type === 'announce' && msg.text) {
+    } else if (msg.type === 'announce' && typeof msg.text === 'string' && msg.text.trim()) {
       onAnnounce?.(msg.text)
     }
   })
