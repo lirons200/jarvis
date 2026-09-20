@@ -1975,6 +1975,6 @@ kbd {
   .trading-badge {
     display: block; position: absolute; bottom: 64px; right: 12px; pointer-events: none;
     width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 50%;
-    background: rgba(224, 95, 95, 0.9); color: #fff; font: 700 13px ui-monospace, monospace;
+    background: rgba(224, 95, 95, 0.9); color: #fff; font: 700 13px/22px ui-monospace, monospace;
   }
 }

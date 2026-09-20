@@ -35,8 +35,8 @@ function finiteOrNull(n) {
  * position) must never be rendered as protected.
  * @returns {'ok'|'missing'|'unknown'|null} null = no open position
  */
-export function deriveStopLossStatus(netUnits, liveStatus, pair) {
-  if (netUnits === 0) return null
+export function deriveStopLossStatus(openUnits, liveStatus, pair) {
+  if (openUnits === 0) return null
   if (liveStatus === null || liveStatus === undefined) return 'unknown'
   const live = liveStatus[pair]
   if (!live) return 'unknown'
@@ -62,11 +62,12 @@ export function buildTradingSnapshot(i) {
     ? null
     : i.pairs.map((pair) => {
         const p = i.openPositions[pair]
-        const netUnits = p ? p.longUnits + p.shortUnits : 0
+        // Gross exposure: a hedged long+short nets to zero but is still open risk (shortUnits is negative).
+        const grossUnits = p ? p.longUnits + Math.abs(p.shortUnits) : 0
         return {
           pair,
-          units: netUnits,
-          stopLoss: deriveStopLossStatus(netUnits, i.liveStopLoss, pair),
+          units: grossUnits,
+          stopLoss: deriveStopLossStatus(grossUnits, i.liveStopLoss, pair),
         }
       })
 

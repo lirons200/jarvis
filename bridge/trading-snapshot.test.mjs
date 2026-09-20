@@ -59,3 +59,12 @@ test('journal entries are allowlisted: trade ids and raw errors never pass, acco
 test('getTradingSnapshot returns {enabled:false} when trading was never armed', async () => {
   assert.deepEqual(await getTradingSnapshot(), { enabled: false })
 })
+
+test('a hedged long+short position is reported as open gross exposure, not hidden as zero', () => {
+  const s = buildTradingSnapshot({
+    ...base,
+    openPositions: { EUR_USD: { longUnits: 1000, shortUnits: -1000 } },
+    liveStopLoss: null,
+  })
+  assert.deepEqual(s.positions[0], { pair: 'EUR_USD', units: 2000, stopLoss: 'unknown' })
+})

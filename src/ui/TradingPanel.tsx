@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import {
   formatPnl, lossBudgetUsed, openPositions, recentJournal, formatJournalLine,
-  isSnapshotStale, statusLabel, stopLossLabel, protectionWarning, needsAttention,
+  isSnapshotStale, tradingState, statusLabel, stopLossLabel, protectionWarning, needsAttention,
 } from '../lib/tradingDashboard'
 
 /**
@@ -29,7 +29,7 @@ export function TradingPanel() {
     : snap.pnl.realizedToday + snap.pnl.unrealized
 
   return (
-    <aside className={`trading-panel trading-${snap.halted ? 'halted' : 'live'}${stale ? ' trading-stale' : ''}`}>
+    <aside className={`trading-panel trading-${tradingState(snap)}${stale ? ' trading-stale' : ''}`}>
       <div className="trading-head">
         <span className="trading-title">TRADING</span>
         <span className="trading-state">{statusLabel(snap, stale)}</span>

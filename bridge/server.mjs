@@ -38,8 +38,9 @@ import { buildHealth } from './health.mjs'
 // Existing shell variables win; loadEnvFile never overrides them.
 try {
   process.loadEnvFile(fileURLToPath(new URL('../.env.local', import.meta.url)))
-} catch {
-  /* no .env.local — run on shell environment alone */
+} catch (err) {
+  // A missing file is normal; anything else (e.g. Node < 20.12 without loadEnvFile) must not look like "no config".
+  if (err?.code !== 'ENOENT') console.error(`[jarvis] could not load .env.local: ${err?.message ?? err}`)
 }
 
 const PORT = Number(process.env.JARVIS_BRIDGE_PORT ?? 8787)

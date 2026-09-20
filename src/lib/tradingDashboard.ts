@@ -134,7 +134,31 @@ export function parseTradingSnapshot(data: unknown): TradingSnapshot | null {
   const d = data as Record<string, unknown>
   if (d.enabled === false) return { enabled: false }
   if (d.enabled !== true) return null
-  if (typeof d.pnl !== 'object' || d.pnl === null || !Array.isArray(d.journal)) return null
+  if (typeof d.armed !== 'boolean' || typeof d.halted !== 'boolean') return null
+  if (d.haltReason !== null && typeof d.haltReason !== 'string') return null
+  if (typeof d.at !== 'string') return null
+
+  const pnl = d.pnl as Record<string, unknown> | null
+  if (typeof pnl !== 'object' || pnl === null) return null
+  const nullableNum = (v: unknown) => v === null || (typeof v === 'number' && Number.isFinite(v))
+  if (!nullableNum(pnl.realizedToday) || !nullableNum(pnl.unrealized)) return null
+  if (typeof pnl.dailyLossLimit !== 'number' || !Number.isFinite(pnl.dailyLossLimit)) return null
+
+  if (d.positions !== null) {
+    if (!Array.isArray(d.positions)) return null
+    for (const p of d.positions as unknown[]) {
+      const pos = p as Record<string, unknown> | null
+      if (typeof pos !== 'object' || pos === null) return null
+      if (typeof pos.pair !== 'string' || typeof pos.units !== 'number' || !Number.isFinite(pos.units)) return null
+      if (pos.stopLoss !== null && pos.stopLoss !== 'ok' && pos.stopLoss !== 'missing' && pos.stopLoss !== 'unknown') return null
+    }
+  }
+
+  if (!Array.isArray(d.journal)) return null
+  for (const e of d.journal as unknown[]) {
+    const entry = e as Record<string, unknown> | null
+    if (typeof entry !== 'object' || entry === null || typeof entry.event !== 'string') return null
+  }
   return data as TradingSnapshot
 }
 

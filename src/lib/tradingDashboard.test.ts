@@ -52,6 +52,18 @@ test('parseTradingSnapshot accepts the disabled and enabled shapes and rejects j
   assert.equal(parseTradingSnapshot('x'), null)
 })
 
+test('parseTradingSnapshot rejects enabled snapshots the panel could crash or mislabel on', () => {
+  assert.equal(parseTradingSnapshot({ enabled: true, positions: {}, pnl: {}, journal: [] }), null)
+  assert.equal(parseTradingSnapshot({ ...fx, positions: 'nope' }), null)
+  assert.equal(parseTradingSnapshot({ ...fx, armed: 'yes' }), null)
+  assert.equal(parseTradingSnapshot({ ...fx, at: undefined }), null)
+  assert.equal(parseTradingSnapshot({ ...fx, pnl: { realizedToday: 'x', unrealized: 0, dailyLossLimit: 50 } }), null)
+  assert.equal(parseTradingSnapshot({ ...fx, pnl: { realizedToday: 0, unrealized: 0 } }), null)
+  assert.equal(parseTradingSnapshot({ ...fx, positions: [{ pair: 'EUR_USD', units: 1, stopLoss: 'maybe' }] }), null)
+  assert.equal(parseTradingSnapshot({ ...fx, journal: [null] }), null)
+  assert.equal(parseTradingSnapshot({ ...fx, positions: null })?.enabled, true)
+})
+
 test('an unknown stop-loss counts as unprotected', () => {
   assert.equal(hasUnprotectedPosition({ ...fx, positions: [{ pair: 'EUR_USD', units: 1, stopLoss: 'unknown' }] }), true)
 })
