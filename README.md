@@ -25,7 +25,7 @@ can have — Node.js and Chrome. That's the whole list.
   or the platform installer at <https://docs.claude.com/en/docs/claude-code> —
   then run `claude` once and complete login. The bridge reuses that login. **No
   API key**, and usage is billed to your existing Claude account.
-- **Node.js 20 or newer** — free, one installer from <https://nodejs.org>. This
+- **Node.js 20.12 or newer** — free, one installer from <https://nodejs.org>. This
   is a Node web app, so it is the one unavoidable tool.
 - **Google Chrome or Microsoft Edge**, in a **real browser window** — not an
   embedded preview pane. Preview panes (including the one inside editors and
@@ -217,8 +217,11 @@ then the triangular arc reactor lighting up — with a start-up sound under it
 
 ## Configuration
 
-Everything is optional in bridge mode. Frontend settings live in `.env.local`
-(copy `.env.example`); bridge settings are environment variables.
+Everything is optional in bridge mode. Copy `.env.example` to `.env.local` and
+uncomment what you want. The bridge loads `.env.local` itself at startup (Node
+20.12+; a variable already set in your shell wins) and Vite reads its `VITE_*`
+values from the same file. `.env.example` documents every bridge variable with
+its default; never commit real keys.
 
 ### Bridge
 
@@ -226,12 +229,14 @@ Everything is optional in bridge mode. Frontend settings live in `.env.local`
 |---|---|---|
 | `JARVIS_BRIDGE_PORT` | `8787` | Port for the WebSocket + HTTP endpoints |
 | `JARVIS_MODEL` | `claude-opus-5` | Model to run |
-| `JARVIS_EFFORT` | `medium` | Reasoning effort |
+| `JARVIS_EFFORT` | `high` | Reasoning effort |
+| `JARVIS_BRIDGE_HOST` | `127.0.0.1` | Address the bridge binds to. The container deploy sets `0.0.0.0` behind a loopback-only port mapping; never expose it publicly. |
+| `JARVIS_DEBUG` | off | `1` logs every agent message type |
 | `JARVIS_ALLOW_WRITES` | off | `1` allows effectful tools (see below) |
 | `JARVIS_ALLOWED_ORIGINS` | local dev | Extra WebSocket origins to accept |
 | `JARVIS_ALLOW_NO_ORIGIN` | off | Accept connections with no `Origin` header |
 | `JARVIS_FILE_ROOTS` | — | Roots the `/file` endpoint may serve from |
-| `JARVIS_VOICE_ID` | — | ElevenLabs voice id |
+| `JARVIS_VOICE_ID` | `JBFqnCBsd6RMkjVDRZzb` (George) | ElevenLabs voice id |
 | `ELEVENLABS_API_KEY` | — | Optional; enables the ElevenLabs voice + Scribe |
 | `JARVIS_OANDA_API_KEY` | — | OANDA personal access token. Unset disables the forex feed entirely. |
 | `JARVIS_OANDA_ACCOUNT_ID` | — | OANDA account id. Unset disables the forex feed entirely. |
@@ -252,16 +257,24 @@ Everything is optional in bridge mode. Frontend settings live in `.env.local`
 
 ### Backtesting
 
-Test a moving-average-crossover strategy against a year of OANDA daily
-history, either by voice ("backtest EUR/USD") or from the command line:
+Test a strategy against a year of OANDA daily history, either by voice
+("backtest EUR/USD") or from the command line. Three strategies are available
+through the `strategy` parameter (`--strategy=` on the CLI): `ma_crossover`
+(default), `rsi_mean_reversion` and `donchian_breakout`. P&L is reported in USD
+(a USD account is assumed), with non-USD quote currencies converted correctly.
 
 ```bash
 npm run backtest -- EUR_USD          # defaults: 10/30-day MA, 252 candles
 npm run backtest -- GBP_USD 5 20 500 # fastPeriod slowPeriod count
+npm run backtest -- USD_JPY --strategy=rsi_mean_reversion --rsi_period=14 --oversold=30 --exit_level=50
+npm run backtest -- EUR_USD --strategy=donchian_breakout --entry_period=20 --exit_period=10 --count=500
 ```
 
-Needs the same `JARVIS_OANDA_API_KEY`/`JARVIS_OANDA_ACCOUNT_ID` as the forex
-feed. Results are not saved anywhere — each run is independent.
+Any strategy parameter can be passed as `--key=value` (lowercase name,
+`--count=` sets the candle count); malformed options are rejected rather than
+ignored. Backtest-only: live trading stays MA-crossover. Needs the same
+`JARVIS_OANDA_API_KEY`/`JARVIS_OANDA_ACCOUNT_ID` as the forex feed. Results are
+not saved anywhere — each run is independent.
 
 ### Frontend (`.env.local`)
 
@@ -289,13 +302,25 @@ the next boot, and both the voice and transcription upgrade automatically.
 
 Phase 4 lets JARVIS place real OANDA orders on its own, using the same
 moving-average-crossover strategy as backtesting. This is off by default
-and stays off unless you explicitly set THREE things:
+and stays off unless you explicitly set both switches, plus the OANDA
+credentials and every risk limit (see `.env.example`; trading refuses to start
+if one is missing). It runs on the practice account by default:
 
 ```bash
 JARVIS_TRADING_ENABLED=true
 JARVIS_TRADING_ARM=true          # required at EVERY boot — never persisted
-JARVIS_OANDA_ALLOW_LIVE=true     # only if you want real money, not practice
 ```
+
+JARVIS's trading is **account-wide**: its position close (it closes ALL long
+units on a pair via the positions endpoint), its exposure cap and its
+daily-loss halt operate on the entire OANDA account, not just the trades JARVIS
+opened. Never arm it on an account that another bot or you also trade; use a
+dedicated OANDA (sub-)account. Many OANDA accounts are netting (hedging
+disabled), where one system's opposite order can reduce or close the other's
+trade — separation by account is the only safe arrangement.
+
+Real money needs two more, both together: `JARVIS_OANDA_ENV=live` and
+`JARVIS_OANDA_ALLOW_LIVE=true`.
 
 Say "Jarvis, stop trading" at any time — `trading_halt` is always available
 and stops the loop as soon as the current pair being evaluated finishes — no
@@ -314,6 +339,16 @@ Resuming after a halt requires restarting the bridge with
 `JARVIS_TRADING_ARM=true` set again — there is no in-conversation resume,
 by design.
 
+When trading is enabled, a read-only **trading panel** appears in the HUD
+(open positions, stop-loss status, today's P&L against the loss limit, recent
+journal). It has no controls and goes visibly stale if the bridge stops
+answering. It reads `GET /trading/status`, which serves the same snapshot.
+
+To run the bridge 24/7 on a server (Docker or systemd, plus `GET /health`),
+see [`deploy/README.md`](deploy/README.md). Read its warning first: an
+auto-restarting service re-arms trading if `JARVIS_TRADING_ARM=true` is in its
+env file.
+
 **Test against the OANDA practice account first, extensively, before ever
 setting `JARVIS_OANDA_ALLOW_LIVE=true` here.** See
 `docs/superpowers/specs/2026-09-14-forex-trading-design.md` for the full
@@ -322,8 +357,8 @@ safety design.
 ### Telegram remote control
 
 Monitor and control autonomous trading from Telegram — get trade
-announcements as messages, and message the bot `status` or `halt`
-from anywhere.
+announcements as messages, message the bot `status` or `halt`, or just chat
+with it in plain text from anywhere.
 
 1. Message [@BotFather](https://t.me/BotFather) on Telegram, send `/newbot`,
    follow the prompts — you'll get a bot token.
@@ -337,8 +372,16 @@ JARVIS_TELEGRAM_BOT_TOKEN=<token from BotFather>
 JARVIS_TELEGRAM_CHAT_ID=<your numeric chat id>
 ```
 
-Message the bot `status` or `halt` at any time. Anyone else who messages the
-bot is silently ignored — it only ever responds to the one configured chat.
+Message the bot `status` or `halt` at any time. Any other text (not starting
+with `/`) is answered by JARVIS in a single-turn session that is **forced
+read-only**: it can look up forex prices, run backtests and report trading
+status, but cannot place orders, change settings, run commands or touch files.
+`halt` is the only control. Anyone else who messages the bot is silently
+ignored — it only ever responds to the one configured chat. Never reuse a bot token that any other program long-polls (Telegram's
+`getUpdates` allows one consumer per token): a second poller causes 409
+Conflict errors and can swallow the other bot's button callbacks (approve/reject
+taps). Create a separate bot via @BotFather for each program (see also
+`deploy/README.md`).
 
 ---
 
