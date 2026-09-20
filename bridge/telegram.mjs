@@ -319,14 +319,22 @@ function startPolling(token, chatId) {
  * bridge is unaffected either way, matching every other optional
  * subsystem (forex, backtest, trading) in this codebase.
  */
+export function isValidChatId(value) {
+  return typeof value === 'string' && /^\d+$/.test(value.trim())
+}
+
 export function initTelegram() {
   const token = process.env.JARVIS_TELEGRAM_BOT_TOKEN
-  const chatId = process.env.JARVIS_TELEGRAM_CHAT_ID
+  const chatId = process.env.JARVIS_TELEGRAM_CHAT_ID?.trim()
   if (!token || !chatId) {
     console.log(
       '[jarvis:telegram] disabled — set JARVIS_TELEGRAM_BOT_TOKEN and ' +
         'JARVIS_TELEGRAM_CHAT_ID to enable',
     )
+    return null
+  }
+  if (!isValidChatId(chatId)) {
+    console.error('[jarvis:telegram] disabled — JARVIS_TELEGRAM_CHAT_ID must be your numeric private chat id')
     return null
   }
   sendToConfiguredChat = (text) => sendMessage(token, chatId, text)
