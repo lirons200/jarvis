@@ -14,17 +14,17 @@
  * there is exactly one implementation of the actual backtesting logic.
  */
 
-import { executeBacktest, formatReport } from '../bridge/backtest.mjs'
+import { executeBacktest, formatReport, parseCliArgs, cliExitCode } from '../bridge/backtest.mjs'
 import { resolveEnv, hostFor } from '../bridge/forex.mjs'
 
 const PAIR_RE = /^[A-Z]{3}_[A-Z]{3}$/
 
-const positional = []
-const flags = {}
-for (const arg of process.argv.slice(2)) {
-  const m = /^--([a-z_]+)=(.*)$/.exec(arg)
-  if (m) flags[m[1]] = m[2]
-  else positional.push(arg)
+let positional, flags
+try {
+  ;({ positional, flags } = parseCliArgs(process.argv.slice(2)))
+} catch (err) {
+  console.error(err.message)
+  process.exit(1)
 }
 const [pairArg, fastArg, slowArg, countArg] = positional
 const pair = (pairArg ?? 'EUR_USD').toUpperCase()
@@ -57,8 +57,9 @@ if (!PAIR_RE.test(pair)) {
 }
 
 const result = await executeBacktest({ host: hostFor(env), accountId, apiKey, pair, count, strategy, params })
-if (result.kind === 'error') {
+const code = cliExitCode(result)
+if (code !== 0) {
   console.error(result.text)
-  process.exit(1)
+  process.exit(code)
 }
 console.log(result.kind === 'info' ? result.text : formatReport(result))

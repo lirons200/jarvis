@@ -344,6 +344,8 @@ export function needsConversionRates(pair) {
 /**
  * Latest rate whose candle time is <= `time` (never a rate from after the
  * exit). Series: [{ time, usdPerQuote }] ascending. Null if none.
+ * Known limitation: there is no staleness bound — a rate from long before
+ * the exit (e.g. after a data gap) is still used.
  */
 export function rateAtTime(series, time) {
   const t = Date.parse(time)
@@ -419,6 +421,32 @@ export async function fetchUsdRateSeries(
 }
 
 /**
+ * Parses CLI args: positional [pair, fast, slow, count] plus --key=value
+ * flags. Any `--` argument not matching --[a-z][a-z0-9_]*=value is an
+ * error (never silently treated as positional). Returns { positional, flags }
+ * or throws.
+ */
+export function parseCliArgs(argv) {
+  const positional = []
+  const flags = {}
+  for (const arg of argv) {
+    if (arg.startsWith('--')) {
+      const m = /^--([a-z][a-z0-9_]*)=(.*)$/.exec(arg)
+      if (!m) throw new Error(`Invalid option "${arg}" — use --name=value with a lowercase name (letters, digits, underscore).`)
+      flags[m[1]] = m[2]
+    } else positional.push(arg)
+  }
+  return { positional, flags }
+}
+
+/** CLI exit code for an executeBacktest result: only zero-trades and ok exit 0. */
+export function cliExitCode(result) {
+  if (result.kind === 'error') return 1
+  if (result.kind === 'info' && result.reason !== 'zero_trades') return 1
+  return 0
+}
+
+/**
  * Shared engine for the MCP tool and CLI: validate -> fetch -> strategy ->
  * USD conversion -> stats. Returns { kind: 'error'|'info', text } for early
  * exits, or { kind: 'ok', ... }. Input validation happens before any network call.
@@ -442,12 +470,13 @@ export async function executeBacktest(
   } catch (err) {
     return { kind: 'error', text: `Could not fetch historical data for ${pair}: ${err.message}` }
   }
-  if (!candles.length) return { kind: 'info', text: `No historical data available for ${pair}.` }
+  if (!candles.length) return { kind: 'info', reason: 'no_data', text: `No historical data available for ${pair}.` }
 
   const description = spec.describe(p)
   if (candles.length < spec.minCandles(p)) {
     return {
       kind: 'info',
+      reason: 'insufficient_data',
       text:
         `Not enough historical data for ${description} — only ${candles.length} ` +
         `candles available (need ${spec.minCandles(p)}). Try a larger count or shorter periods.`,
@@ -458,6 +487,7 @@ export async function executeBacktest(
   if (!trades.length) {
     return {
       kind: 'info',
+      reason: 'zero_trades',
       text: `Backtested ${pair} over ${candles.length} daily candles (${description}): 0 trades — no signals in this window.`,
     }
   }

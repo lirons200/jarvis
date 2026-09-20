@@ -13,6 +13,8 @@ import {
   resolveStrategy,
   executeBacktest,
   formatReport,
+  parseCliArgs,
+  cliExitCode,
 } from './backtest.mjs'
 
 // ---------------------------------------------------------------------------
@@ -257,4 +259,48 @@ test('executeBacktest default strategy reproduces the MA crossover trades exactl
   const res = await executeBacktest({ pair: 'EUR_USD', params: { fast_period: 2, slow_period: 3 } }, async () => candles)
   const direct = scaleTradesToNotional(movingAverageCrossoverStrategy(candles, { fastPeriod: 2, slowPeriod: 3 }))
   assert.deepEqual(res.trades, direct)
+})
+
+// ---------------------------------------------------------------------------
+// CLI helpers, exit codes, and edge cases
+// ---------------------------------------------------------------------------
+
+test('cliExitCode: no-data and insufficient-data exit 1, zero-trades and ok exit 0', async () => {
+  const run = (fake, extra = {}) => executeBacktest({ pair: 'EUR_USD', params: { fast_period: 2, slow_period: 3 }, ...extra }, fake)
+  const noData = await run(async () => [])
+  assert.equal(noData.reason, 'no_data')
+  assert.equal(cliExitCode(noData), 1)
+  const short = await run(async () => mk([[1], [2]]))
+  assert.equal(short.reason, 'insufficient_data')
+  assert.equal(cliExitCode(short), 1)
+  const flat = await run(async () => mk([[1], [1], [1], [1], [1]]))
+  assert.equal(flat.reason, 'zero_trades')
+  assert.equal(cliExitCode(flat), 0)
+  const fetchErr = await run(async () => { throw new Error('boom') })
+  assert.equal(cliExitCode(fetchErr), 1)
+  const okRes = await run(async () => mk([10, 10, 10, 12, 14, 16, 10, 8, 6].map((c) => [c])))
+  assert.equal(cliExitCode(okRes), 0)
+})
+
+test('parseCliArgs splits positionals and flags; rejects malformed -- arguments', () => {
+  const r = parseCliArgs(['EUR_USD', '5', '--strategy=rsi_mean_reversion', '--rsi_period=7'])
+  assert.deepEqual(r.positional, ['EUR_USD', '5'])
+  assert.deepEqual(r.flags, { strategy: 'rsi_mean_reversion', rsi_period: '7' })
+  assert.deepEqual(parseCliArgs(['--exit_level2=5']).flags, { exit_level2: '5' })
+  for (const bad of ['--Strategy=x', '--rsi-period=7', '--oversold', '--=1', '--2a=1']) {
+    assert.throws(() => parseCliArgs([bad]), /Invalid option/, bad)
+  }
+})
+
+test('USD_JPY trade with exit price 0 or NaN is withheld, not converted to Infinity/NaN', () => {
+  for (const bad of [0, NaN]) {
+    const r = scaleTradesToUsd([{ ...trade(150, 151), exitPrice: bad }], 'USD_JPY')
+    assert.equal(r.converted, false)
+    assert.equal(r.currency, 'JPY')
+    assert.match(r.warning, /NOT converted/)
+  }
+})
+
+test('resolveStrategy rejects an own "__proto__" params key', () => {
+  assert.throws(() => resolveStrategy('ma_crossover', JSON.parse('{"__proto__":1}')), /Unknown parameter "__proto__"/)
 })
