@@ -135,6 +135,7 @@ export function reconcileOpenPositions(openPositions, configuredPairs, hasStopLo
   return { unexpected, missingStopLoss, unexpectedShorts }
 }
 
+import { buildTradingSnapshot } from './trading-snapshot.mjs'
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
 import { resolveEnv, hostFor, fetchPricingOnce, parsePricingResponse } from './forex.mjs'
@@ -180,6 +181,7 @@ const state = {
 function haltTrading(reason) {
   state.halted = true
   state.haltReason = reason
+  snapshotCache = { atMs: 0, value: null } // a halt must show on the HUD now, not after the TTL
   console.error(`[jarvis:trading] HALTED — ${reason}`)
   state.stopPoller?.()
 }
@@ -543,6 +545,58 @@ export async function getTradingStatusText() {
   }
   lines.push(`Recent activity: ${tail.length ? tail.map((e) => `${e.pair} ${e.event}`).join(', ') : 'none'}`)
   return lines.join('. ')
+}
+
+const SNAPSHOT_TTL_MS = 10_000
+let snapshotCache = { atMs: 0, value: null }
+
+/**
+ * Structured, JSON-safe status for the HUD dashboard. Unlike the text
+ * report it never includes credentials, account ids, or raw broker
+ * payloads. Broker lookups are cached briefly so a polling browser can't
+ * turn into a request storm against OANDA. Read-only.
+ */
+export async function getTradingSnapshot() {
+  if (!state.armed || !state.config) return { enabled: false }
+  const nowMs = Date.now()
+  if (snapshotCache.value && nowMs - snapshotCache.atMs < SNAPSHOT_TTL_MS) return snapshotCache.value
+
+  const config = state.config
+  const [journalTail, positions, pl] = await Promise.all([
+    readJournalTail(JOURNAL_PATH, 10),
+    fetchOpenPositions(config).catch(() => null),
+    fetchAccountPL(config).catch(() => null),
+  ])
+  // Same guard as getTradingStatusText: before dayKey is set the baseline is
+  // 0, so realizedPL - 0 would be the account's lifetime P&L, not today's.
+  const established = pl !== null && state.dayKey !== null
+  const value = buildTradingSnapshot({
+    armed: state.armed,
+    halted: state.halted,
+    haltReason: state.haltReason,
+    pairs: state.config.pairs,
+    openPositions: positions,
+    hasStopLoss: state.hasStopLoss,
+    dailyRealizedPL: established ? pl.realizedPL - state.dayStartRealizedPL : null,
+    unrealizedPL: pl ? pl.unrealizedPL : null,
+    maxDailyLoss: config.maxDailyLoss,
+    journal: journalTail,
+    nowMs,
+  })
+  snapshotCache = { atMs: nowMs, value }
+  return value
+}
+
+/** GET /trading/status — registered inside server.mjs's origin-checked handler, like forexRoute. */
+export async function tradingRoute(req, res, cors) {
+  let body
+  try {
+    body = await getTradingSnapshot()
+  } catch {
+    body = { enabled: false }
+  }
+  res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+  res.end(JSON.stringify(body))
 }
 
 /**

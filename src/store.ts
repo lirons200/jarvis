@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { ForexPriceEntry, RawPrices } from './lib/forexTicker'
 import { mergeForexPrices } from './lib/forexTicker'
+import type { TradingSnapshot } from './lib/tradingDashboard'
 
 export type Phase =
   | 'offline'   // waiting for the click that unlocks audio
@@ -248,6 +249,9 @@ type State = {
   forex: Record<string, ForexPriceEntry>
   // Baseline is per-session by design (resets on page reload); no reset action planned until phase 3 adds real history.
   setForexPrices: (raw: RawPrices) => void
+  /** Read-only trading status from the bridge; null until the first poll. */
+  trading: TradingSnapshot | null
+  setTrading: (snap: TradingSnapshot) => void
 
   setVoice: (v: string) => void
   setGestures: (on: boolean) => void
@@ -296,6 +300,7 @@ export const useStore = create<State>((set) => ({
   bootNote: '',
   ui: defaultUi(),
   forex: {},
+  trading: null,
 
   setVoice: (voice) => set({ voice }),
   setGestures: (gestures) => set({ gestures }),
@@ -413,6 +418,7 @@ export const useStore = create<State>((set) => ({
   // Baseline-capture/carry-forward logic lives in mergeForexPrices
   // (src/lib/forexTicker.ts) so it can be unit-tested outside Vite.
   setForexPrices: (raw) => set((s) => ({ forex: mergeForexPrices(s.forex, raw) })),
+  setTrading: (trading) => set({ trading }),
   // An explicit order outranks the sticky flag. `hold: 'sticky'` only ever
   // meant "survive the next turn boundary"; when someone says "clear the
   // screen", a card staying up because an earlier turn asked nicely reads as

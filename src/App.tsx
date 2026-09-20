@@ -33,6 +33,7 @@ import {
 import { startAnalyser, micLevel } from './lib/audio'
 import { probeCapabilities } from './lib/capabilities'
 import { startForexPolling } from './lib/forexTicker'
+import { startTradingPolling, FIXTURE_TRADING_SNAPSHOT } from './lib/tradingDashboard'
 import { env } from './config'
 
 /**
@@ -541,6 +542,17 @@ export default function App() {
   useEffect(() => {
     const stop = startForexPolling((prices) => store.getState().setForexPrices(prices))
     return stop
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Read-only trading panel. DEV-only `?tradingFixture=1` shows sample data so
+  // the panel is viewable without broker credentials.
+  useEffect(() => {
+    if (import.meta.env.DEV && location.search.includes('tradingFixture=1')) {
+      store.getState().setTrading(FIXTURE_TRADING_SNAPSHOT)
+      return
+    }
+    return startTradingPolling((snap) => store.getState().setTrading(snap))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
