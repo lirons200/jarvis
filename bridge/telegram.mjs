@@ -389,6 +389,7 @@ export async function processUpdates(updates, handle, onError) {
 }
 
 async function handleUpdate(update, token, chatId) {
+  if (!Number.isFinite(update?.update_id)) return
   updateOffset = update.update_id + 1
   const msg = update.message
   if (!msg?.text) return
@@ -425,7 +426,8 @@ export async function runPollStep(pollFn, onError) {
   try {
     return await pollFn()
   } catch (err) {
-    onError(err)
+    // A failing logger must not be able to kill the loop that carries HALT.
+    try { onError(err) } catch { /* ignore */ }
     return POLL_INTERVAL_MS
   }
 }
@@ -436,7 +438,7 @@ function startPolling(token, chatId) {
       () => pollOnce(token, chatId),
       (err) => console.error(`[jarvis:telegram] poll loop error: ${err?.name}: ${err?.message}`),
     )
-    pollTimer = setTimeout(tick, delay)
+    pollTimer = setTimeout(tick, Number.isFinite(delay) && delay >= 1000 ? delay : 1000)
   }
   void tick()
   return () => {
