@@ -68,3 +68,10 @@ test('a hedged long+short position is reported as open gross exposure, not hidde
   })
   assert.deepEqual(s.positions[0], { pair: 'EUR_USD', units: 2000, stopLoss: 'unknown' })
 })
+
+test('sanitizeJournalEntry scrubs API-key-shaped tokens and Bearer text from reason', () => {
+  const key = `${'a1'.repeat(16)}-${'b2'.repeat(16)}`
+  const e = sanitizeJournalEntry({ event: 'error', reason: `failed key ${key} and Authorization: Bearer sekrettoken123 end` })
+  assert.ok(!e.reason.includes(key))
+  assert.ok(!e.reason.includes('sekrettoken123'))
+})

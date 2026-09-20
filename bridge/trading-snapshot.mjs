@@ -8,6 +8,10 @@ const MAX_REASON_LEN = 120
 // OANDA account ids look like 101-004-1234567-001; error text from the API
 // can echo the request path, so scrub anything shaped like one.
 const ACCOUNT_ID_RE = /\d{3}-\d{3}-\d+-\d+/g
+// Defence in depth: an API key must never reach the browser either, even if
+// some error path ever echoes an Authorization header. OANDA v3 tokens are
+// 32hex-32hex; also scrub anything following "Bearer".
+const TOKEN_RES = [/[0-9a-f]{32}-[0-9a-f]{32}/gi, /Bearer\s+\S+/gi]
 
 /** Journal entries carry raw broker results (trade ids, error text). Only an allowlist goes to the browser. */
 export function sanitizeJournalEntry(entry) {
@@ -19,7 +23,9 @@ export function sanitizeJournalEntry(entry) {
   if (typeof entry?.stopLossConfirmed === 'boolean') out.stopLossConfirmed = entry.stopLossConfirmed
   if (Number.isFinite(entry?.fillPrice)) out.fillPrice = entry.fillPrice
   if (typeof entry?.reason === 'string') {
-    out.reason = entry.reason.replace(ACCOUNT_ID_RE, '[redacted]').slice(0, MAX_REASON_LEN)
+    let reason = entry.reason.replace(ACCOUNT_ID_RE, '[redacted]')
+    for (const re of TOKEN_RES) reason = reason.replace(re, '[redacted]')
+    out.reason = reason.slice(0, MAX_REASON_LEN)
   }
   return out
 }
