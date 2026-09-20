@@ -1,6 +1,22 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { isSlashCommand, chunkMessage, createRateLimiter, createChatDispatcher } from './telegram.mjs'
+import {
+  isSlashCommand, chunkMessage, createRateLimiter, createChatDispatcher, isAuthorizedMessage,
+} from './telegram.mjs'
+
+test('isAuthorizedMessage requires private chat and matching chat and sender ids', () => {
+  const ok = { chat: { id: 5, type: 'private' }, from: { id: 5 } }
+  assert.equal(isAuthorizedMessage(ok, '5'), true)
+  // group whose id matches but sender differs
+  assert.equal(isAuthorizedMessage({ chat: { id: 5, type: 'group' }, from: { id: 9 } }, '5'), false)
+  // group with matching ids still refused: not private
+  assert.equal(isAuthorizedMessage({ chat: { id: 5, type: 'supergroup' }, from: { id: 5 } }, '5'), false)
+  // private chat but different sender
+  assert.equal(isAuthorizedMessage({ chat: { id: 5, type: 'private' }, from: { id: 9 } }, '5'), false)
+  assert.equal(isAuthorizedMessage({ chat: { id: 5, type: 'private' } }, '5'), false)
+  assert.equal(isAuthorizedMessage({ chat: { id: 9, type: 'private' }, from: { id: 5 } }, '5'), false)
+  assert.equal(isAuthorizedMessage(undefined, '5'), false)
+})
 
 test('isSlashCommand flags leading-slash text only', () => {
   assert.equal(isSlashCommand('/foo'), true)
@@ -81,6 +97,24 @@ test('dispatcher allows only one in-flight request', async () => {
   await new Promise((r) => setImmediate(r))
   release('again')
   assert.equal(await second, 'again')
+})
+
+test("a hung handler's late grace release cannot clear a newer run's busy flag", async () => {
+  const releases = []
+  const d = createChatDispatcher({
+    handler: () => new Promise((r) => releases.push(r)),
+    limiter: limiter(),
+    timeoutMs: 10,
+    graceMs: 30,
+  })
+  assert.match(await d('one'), /too long/) // times out; handler hangs
+  await new Promise((r) => setTimeout(r, 60)) // grace release frees the slot
+  const second = d('two')
+  await new Promise((r) => setImmediate(r))
+  releases[0]('late') // hung first handler finally settles
+  assert.match(await d('three'), /Still working/) // second run still holds the slot
+  releases[1]('done')
+  assert.equal(await second, 'done')
 })
 
 test('dispatcher applies the rate limit', async () => {

@@ -96,8 +96,9 @@ const TIMEOUT_GRACE_MS = 5_000
  * refused with a short reply rather than queued, so a burst can't stack up
  * agent runs. The handler receives an AbortSignal that fires on timeout.
  */
-export function createChatDispatcher({ handler, limiter, timeoutMs, maxInput = MAX_INPUT_CHARS }) {
+export function createChatDispatcher({ handler, limiter, timeoutMs, maxInput = MAX_INPUT_CHARS, graceMs = TIMEOUT_GRACE_MS }) {
   let busy = false
+  let current = null
   return async function dispatch(text) {
     const input = String(text ?? '').trim()
     if (!input) return 'Send me some text.'
@@ -109,9 +110,12 @@ export function createChatDispatcher({ handler, limiter, timeoutMs, maxInput = M
     const controller = new AbortController()
     let timer
     let grace
+    // A per-call token: a hung handler's late release must not clear the busy
+    // flag of a newer run that took the slot after the grace release.
+    const token = (current = {})
     const release = () => {
       clearTimeout(grace)
-      busy = false
+      if (current === token) busy = false
     }
     const work = Promise.resolve().then(() => handler(input, controller.signal))
     // Released when the handler truly settles; the grace fallback below covers
@@ -123,7 +127,7 @@ export function createChatDispatcher({ handler, limiter, timeoutMs, maxInput = M
         new Promise((_, reject) => {
           timer = setTimeout(() => {
             controller.abort()
-            grace = setTimeout(release, TIMEOUT_GRACE_MS)
+            grace = setTimeout(release, graceMs)
             reject(new Error('timeout'))
           }, timeoutMs)
         }),
@@ -137,6 +141,19 @@ export function createChatDispatcher({ handler, limiter, timeoutMs, maxInput = M
       clearTimeout(timer)
     }
   }
+}
+
+/**
+ * Full message authorization: a private chat, whose chat id AND sender id both
+ * equal the configured id. Checking chat.id alone would let any member of a
+ * group that happens to carry the id (or a forwarded/channel post) through.
+ */
+export function isAuthorizedMessage(msg, allowedChatId) {
+  return (
+    msg?.chat?.type === 'private' &&
+    isAuthorizedChat(msg.chat.id, allowedChatId) &&
+    isAuthorizedChat(msg.from?.id, allowedChatId)
+  )
 }
 
 const FETCH_TIMEOUT_MS = 30_000
@@ -262,7 +279,7 @@ async function pollOnce(token, chatId) {
     updateOffset = update.update_id + 1
     const msg = update.message
     if (!msg?.text) continue
-    if (!isAuthorizedChat(msg.chat?.id, chatId)) continue
+    if (!isAuthorizedMessage(msg, chatId)) continue
 
     const name = parseCommand(msg.text)
     if (name === 'unknown' && !isSlashCommand(msg.text) && dispatchChat) {
