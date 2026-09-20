@@ -10,7 +10,10 @@ const MAX_REASON_LEN = 120
 const ACCOUNT_ID_RE = /\d{3}-\d{3}-\d+-\d+/g
 // Defence in depth: an API key must never reach the browser either, even if
 // some error path ever echoes an Authorization header. OANDA v3 tokens are
-// 32hex-32hex; also scrub anything following "Bearer".
+// 32hex-32hex (either case); also scrub anything following "Bearer".
+// NOT covered: Telegram-style `123456789:AAH...`, `Basic ...` credentials,
+// `sk-...` keys, or any other token shape. A generic long-token rule was
+// skipped to avoid over-redacting ordinary text.
 const TOKEN_RES = [/[0-9a-f]{32}-[0-9a-f]{32}/gi, /Bearer\s+\S+/gi]
 
 /** Journal entries carry raw broker results (trade ids, error text). Only an allowlist goes to the browser. */

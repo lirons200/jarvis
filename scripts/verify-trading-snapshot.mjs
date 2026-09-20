@@ -4,10 +4,17 @@
  * real OANDA PRACTICE account. Runs the production collector
  * (collectTradingSnapshot in bridge/trading.mjs) without arming or enabling
  * anything, then checks the result. Only GET requests are ever made; a
- * diagnostics_channel hook records every outgoing request and the script fails
- * if any is not a GET.
+ * diagnostics_channel hook records every outgoing request of the whole run and
+ * the script fails at exit if any is not a GET.
+ *
+ * MANUAL ONLY: needs real OANDA practice credentials and network; it is not
+ * part of `npm test`. When the account is flat it cannot exercise stop-loss
+ * ok/missing or non-empty positions, and says so (NOT VERIFIED).
  *
  *   node --import tsx scripts/verify-trading-snapshot.mjs [path-to-env-file]
+ *
+ * Env file: argv[2], else $JARVIS_VERIFY_ENV_FILE, else <repo>/.env.local
+ * (a git worktree lacks .env.local, so pass one of the overrides there).
  *
  * Needs `tsx` (devDependency) so the frontend's parseTradingSnapshot can be
  * imported directly. Credentials are never printed; all output is scrubbed.
@@ -18,13 +25,14 @@ import https from 'node:https'
 import { writeFile, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { collectTradingSnapshot } from '../bridge/trading.mjs'
 import { resolveEnv, hostFor } from '../bridge/forex.mjs'
 import { tradingDayKey } from '../bridge/trading-risk.mjs'
 import { deriveStopLossStatus } from '../bridge/trading-snapshot.mjs'
 import { parseTradingSnapshot } from '../src/lib/tradingDashboard.ts'
 
-const envFile = process.argv[2] ?? 'C:\\Users\\irons\\jarvis\\.env.local'
+const envFile = process.argv[2] ?? process.env.JARVIS_VERIFY_ENV_FILE ?? fileURLToPath(new URL('../.env.local', import.meta.url))
 process.loadEnvFile(envFile)
 
 const apiKey = process.env.JARVIS_OANDA_API_KEY
@@ -46,8 +54,12 @@ const host = hostFor(env)
 
 // --- request recorder --------------------------------------------------------
 const requests = []
+const allRequests = []
+let coverageGap = false
 diagnosticsChannel.subscribe('http.client.request.start', ({ request }) => {
-  requests.push({ method: request.method, path: redact(request.path), at: performance.now() })
+  const r = { method: request.method, path: redact(request.path), at: performance.now() }
+  requests.push(r)
+  allRequests.push(r)
 })
 
 const results = []
@@ -179,8 +191,9 @@ try {
     if (row.units !== expUnits || row.stopLoss !== expSl) posOk = false
     detail.push(`${row.pair}:units=${row.units}/${expUnits},sl=${row.stopLoss}/${expSl}`)
   }
-  check('positions + stopLoss match independent derivation from raw broker data', posOk, detail.join(' '))
   const openCount = Object.keys(rawPositions).length
+  coverageGap = openCount === 0 && trades.length === 0
+  check(`positions + stopLoss match independent derivation from raw broker data${coverageGap ? ' (FLAT-ACCOUNT ONLY: trivially 0/null, not live evidence)' : ''}`, posOk, detail.join(' '))
   log(`INFO  open positions on account: ${openCount} (${trades.length} trades, ${slTradeIds.size} STOP_LOSS orders); configured-pair positions in snapshot: ${snap.positions.filter((p) => p.units !== 0).length}`)
   const outOfConfig = Object.keys(rawPositions).filter((k) => !pairs.includes(k))
   if (outOfConfig.length) log(`INFO  ${outOfConfig.length} open position(s) on pairs outside the configured list are (correctly) not shown by the dashboard`)
@@ -201,6 +214,10 @@ try {
   await rm(tmp, { recursive: true, force: true })
 }
 
+check('ALL requests made by this whole run were GET', allRequests.length > 0 && allRequests.every((r) => r.method === 'GET'), `${allRequests.length} recorded`)
+if (coverageGap) {
+  log('NOT VERIFIED: account has zero open positions/trades, so stop-loss ok/missing derivation, non-empty positions and P&L with open trades were NOT exercised against real broker data. Re-run when positions exist.')
+}
 const failed = results.filter((r) => !r).length
 log(`\n${failed === 0 ? 'ALL PASS' : failed + ' FAILED'} (${results.length} checks)`)
 process.exit(failed === 0 ? 0 : 1)

@@ -75,3 +75,9 @@ test('sanitizeJournalEntry scrubs API-key-shaped tokens and Bearer text from rea
   assert.ok(!e.reason.includes(key))
   assert.ok(!e.reason.includes('sekrettoken123'))
 })
+
+test('sanitizeJournalEntry scrubs uppercase-hex API-key-shaped tokens', () => {
+  const key = `${'AB'.repeat(16)}-${'CD'.repeat(16)}`
+  const e = sanitizeJournalEntry({ event: 'error', reason: `failed key ${key}` })
+  assert.ok(!e.reason.includes(key))
+})
