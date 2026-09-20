@@ -15,13 +15,18 @@ const UNDOCUMENTED_ON_PURPOSE = new Set([
 // process.env.JARVIS_X and process.env['JARVIS_X'] / ["JARVIS_X"]
 const READ_RE = /process\.env(?:\.|\[\s*['"])(JARVIS_[A-Z0-9_]+)/g
 
-const sources = readdirSync(BRIDGE).filter((f) => f.endsWith('.mjs') && !f.endsWith('.test.mjs'))
+const SCRIPTS = join(ROOT, 'scripts')
+const listSources = (dir, name) =>
+  readdirSync(dir)
+    .filter((f) => f.endsWith('.mjs') && !f.endsWith('.test.mjs'))
+    .map((f) => ({ path: join(dir, f), label: `${name}/${f}` }))
+const sources = [...listSources(BRIDGE, 'bridge'), ...listSources(SCRIPTS, 'scripts')]
 
 function variablesRead() {
   const found = new Map()
-  for (const file of sources) {
-    for (const m of readFileSync(join(BRIDGE, file), 'utf8').matchAll(READ_RE)) {
-      found.set(m[1], file)
+  for (const src of sources) {
+    for (const m of readFileSync(src.path, 'utf8').matchAll(READ_RE)) {
+      found.set(m[1], src.label)
     }
   }
   return found
@@ -43,6 +48,6 @@ test('every JARVIS_* variable the bridge reads is documented in .env.example', (
   )
   const missing = [...variablesRead()]
     .filter(([name]) => !documented.has(name) && !UNDOCUMENTED_ON_PURPOSE.has(name))
-    .map(([name, file]) => `${name} (read in bridge/${file})`)
+    .map(([name, file]) => `${name} (read in ${file})`)
   assert.deepEqual(missing, [], `add these to .env.example:\n  ${missing.join('\n  ')}`)
 })

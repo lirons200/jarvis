@@ -311,6 +311,14 @@ JARVIS_TRADING_ENABLED=true
 JARVIS_TRADING_ARM=true          # required at EVERY boot — never persisted
 ```
 
+JARVIS's trading is **account-wide**: its position close (it closes ALL long
+units on a pair via the positions endpoint), its exposure cap and its
+daily-loss halt operate on the entire OANDA account, not just the trades JARVIS
+opened. Never arm it on an account that another bot or you also trade; use a
+dedicated OANDA (sub-)account. Many OANDA accounts are netting (hedging
+disabled), where one system's opposite order can reduce or close the other's
+trade — separation by account is the only safe arrangement.
+
 Real money needs two more, both together: `JARVIS_OANDA_ENV=live` and
 `JARVIS_OANDA_ALLOW_LIVE=true`.
 
@@ -369,8 +377,11 @@ with `/`) is answered by JARVIS in a single-turn session that is **forced
 read-only**: it can look up forex prices, run backtests and report trading
 status, but cannot place orders, change settings, run commands or touch files.
 `halt` is the only control. Anyone else who messages the bot is silently
-ignored — it only ever responds to the one configured chat. Only one bridge
-may poll a given bot token (see `deploy/README.md`).
+ignored — it only ever responds to the one configured chat. Never reuse a bot token that any other program long-polls (Telegram's
+`getUpdates` allows one consumer per token): a second poller causes 409
+Conflict errors and can swallow the other bot's button callbacks (approve/reject
+taps). Create a separate bot via @BotFather for each program (see also
+`deploy/README.md`).
 
 ---
 
