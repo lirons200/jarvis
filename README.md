@@ -317,7 +317,17 @@ daily-loss halt operate on the entire OANDA account, not just the trades JARVIS
 opened. Never arm it on an account that another bot or you also trade; use a
 dedicated OANDA (sub-)account. Many OANDA accounts are netting (hedging
 disabled), where one system's opposite order can reduce or close the other's
-trade — separation by account is the only safe arrangement.
+trade — separation by account is the only safe arrangement. As a guard, at boot
+JARVIS refuses to arm when the account holds open trades it did not open (per its
+trade journal, or if that is unreadable), or when OANDA can't be queried. Setting
+`JARVIS_TRADING_SHARED_ACCOUNT_ACK=true` overrides it, but that does **not** make
+sharing safe: on a netting account JARVIS's close-all-units exit can flatten the
+other system's position, and its exposure cap and daily-loss halt count the whole
+account. Limits of the check: it runs only at boot, so it does not see trades the
+other system opens after JARVIS is armed; and the journal records trade ids without
+an account id, so a journal carried over from a different account (for example
+practice to live, or to a new sub-account) could share ids with a foreign trade
+here. Delete or move `bridge/data/trading-journal.jsonl` when you change accounts.
 
 Real money needs two more, both together: `JARVIS_OANDA_ENV=live` and
 `JARVIS_OANDA_ALLOW_LIVE=true`.

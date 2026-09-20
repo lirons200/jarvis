@@ -264,6 +264,11 @@ export function aggregateStopLossStatus(tradesJson, ordersJson) {
  * confirming both the `openTrades` trade shape and the `pendingOrders`
  * STOP_LOSS order's `tradeID` linkage assumed below are correct.
  */
+export async function fetchOpenTradesRaw({ host, accountId, apiKey }) {
+  const { json } = await oandaRequest({ host, accountId, apiKey, method: 'GET', path: '/openTrades' })
+  return json
+}
+
 export async function fetchOpenTradesStopLossStatus({ host, accountId, apiKey }) {
   const [tradesRes, ordersRes] = await Promise.all([
     oandaRequest({ host, accountId, apiKey, method: 'GET', path: '/openTrades' }),

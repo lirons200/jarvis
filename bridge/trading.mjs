@@ -145,8 +145,9 @@ import { computeATR, checkTotalExposure, checkDailyLossHalt, tradingDayKey } fro
 import {
   fetchInstrumentPrecision, fetchOpenPositions, fetchAccountPL,
   placeMarketOrder, closeLongPosition, formatStopPrice, buildClientOrderId,
-  fetchOpenTradesStopLossStatus,
+  fetchOpenTradesStopLossStatus, fetchOpenTradesRaw,
 } from './trading-orders.mjs'
+import { checkSharedAccount } from './trading-shared-account.mjs'
 
 const JOURNAL_PATH = fileURLToPath(new URL('./data/trading-journal.jsonl', import.meta.url))
 
@@ -488,6 +489,18 @@ export async function initTrading(onAnnounce) {
   // degrade to "trading disabled", never throw up into server.mjs's
   // top-level await and take the whole bridge (voice, UI) down with it.
   try {
+    // Before anything arms: refuse if the account holds trades JARVIS didn't open.
+    const guard = await checkSharedAccount({
+      fetchTrades: () => fetchOpenTradesRaw(config),
+      readJournal: () => readJournalTail(JOURNAL_PATH, Number.MAX_SAFE_INTEGER),
+      ackRaw: process.env.JARVIS_TRADING_SHARED_ACCOUNT_ACK,
+    })
+    if (guard.refuse) {
+      console.error(`[jarvis:trading] NOT ARMED — ${guard.message}`)
+      return null
+    }
+    if (guard.warning) console.error(`[jarvis:trading] WARNING — ${guard.warning}`)
+
     const openPositions = await fetchOpenPositions(config)
     const stopLossStatus = await fetchOpenTradesStopLossStatus(config)
     for (const [pair, info] of Object.entries(stopLossStatus)) {
