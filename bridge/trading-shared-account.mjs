@@ -14,7 +14,13 @@
  * account-wide exposure cap are affected by every open trade, and a trade on
  * an unconfigured pair still means somebody else is using the account.
  * Deliberately conservative: a lost/truncated journal yields false refusals
- * (fail closed), never a false "owned".
+ * (fail closed), never a false "owned". Known limit: journal entries carry no
+ * account id, so a journal carried over from ANOTHER account could share trade
+ * ids with a foreign trade here and misclassify it as owned — hence the README
+ * tells users to move the journal when they change accounts.
+ * Boot cannot hang on the broker call: the shared oandaRequest client has an
+ * 8 s deadline and idle timeout, and a timeout throws, which the caller treats
+ * as a refusal.
  *
  * Malformed input (non-object, non-array `trades`) cannot be interpreted, so
  * it is reported via `malformed` and the caller must refuse.
