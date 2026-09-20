@@ -263,50 +263,182 @@ export async function announceToTelegram(text) {
 let pollTimer = null
 let updateOffset = 0
 
+/** Normal gap between polls when healthy. */
+export const POLL_INTERVAL_MS = 1000
+export const CONFLICT_BACKOFF_BASE_MS = 30_000
+export const ERROR_BACKOFF_BASE_MS = 5_000
+export const BACKOFF_CAP_MS = 5 * 60_000
+/** Short on purpose: /halt must not sit unread for minutes, and each of our
+ *  polls displaces the other poller anyway. */
+export const CONFLICT_BACKOFF_CAP_MS = 60_000
+export const BACKOFF_LOG_EVERY_MS = 10 * 60_000
+
+/**
+ * True for Telegram's "another getUpdates consumer holds this token" answer.
+ * net.mjs's openRemote does not throw on non-200, so it normally arrives as a
+ * parsed body ({ ok:false, error_code:409 }); a thrown error carrying
+ * status 409 is accepted too in case a lower layer starts rejecting.
+ */
+export function isPollConflict(dataOrErr) {
+  if (!dataOrErr || typeof dataOrErr !== 'object') return false
+  return dataOrErr.error_code === 409 || dataOrErr.status === 409 || dataOrErr.statusCode === 409
+}
+
+/** Doubles from `base` (0 = no backoff yet), never exceeding the cap. */
+export function nextBackoffMs(prevMs, base, cap = BACKOFF_CAP_MS) {
+  if (!prevMs || prevMs <= 0) return Math.min(base, cap)
+  return Math.min(prevMs * 2, cap)
+}
+
+export function initialPollState() {
+  return { mode: 'ok', backoffMs: 0, lastLogAt: 0, failures: 0 }
+}
+
+/**
+ * Pure reducer for one poll outcome. `outcome` is { kind: 'ok' | 'conflict' |
+ * 'error', message? }. Returns the next state, the delay before the next poll,
+ * and `log` (null, or { level, kind, message }) so the caller only prints on
+ * entering a failure state, every BACKOFF_LOG_EVERY_MS after that, and on
+ * recovery, rather than on every retry.
+ */
+export function advancePollState(state, outcome, now) {
+  if (outcome.kind === 'ok') {
+    const recovered = state.mode !== 'ok'
+    return {
+      state: initialPollState(),
+      delayMs: POLL_INTERVAL_MS,
+      log: recovered
+        ? { level: 'info', kind: 'recovered', message: `Telegram polling recovered after ${state.failures} failed poll(s)` }
+        : null,
+    }
+  }
+  const mode = outcome.kind
+  const sameMode = state.mode === mode
+  const base = mode === 'conflict' ? CONFLICT_BACKOFF_BASE_MS : ERROR_BACKOFF_BASE_MS
+  const cap = mode === 'conflict' ? CONFLICT_BACKOFF_CAP_MS : BACKOFF_CAP_MS
+  const backoffMs =nextBackoffMs(sameMode ? state.backoffMs : 0, base, cap)
+  // Telegram's own 429 hint wins over our guess, still bounded by the cap.
+  const retryMs = Number(outcome.retryAfterS) * 1000
+  const delayMs = retryMs > 0 ? Math.min(Math.max(retryMs, POLL_INTERVAL_MS), cap) : backoffMs
+  const shouldLog = !sameMode || now - state.lastLogAt >= BACKOFF_LOG_EVERY_MS
+  const message = mode === 'conflict'
+    ? 'Telegram 409 Conflict: another process is polling getUpdates with the same bot token. '
+      + 'Only one poller can receive updates, so commands may be missed by JARVIS or the other bot. '
+      + 'Fix: give JARVIS its own bot token (JARVIS_TELEGRAM_BOT_TOKEN) or stop the other poller. '
+      + 'Backing off and retrying quietly.'
+    : `${outcome.message ?? 'poll failed'} — backing off ${Math.round(delayMs / 1000)}s`
+  return {
+    state: { mode, backoffMs, lastLogAt: shouldLog ? now : state.lastLogAt, failures: (sameMode ? state.failures : 0) + 1 },
+    delayMs,
+    log: shouldLog ? { level: mode === 'conflict' ? 'warn' : 'error', kind: mode, message } : null,
+  }
+}
+
+let pollState = initialPollState()
+
+function applyPollOutcome(outcome) {
+  const step = advancePollState(pollState, outcome, Date.now())
+  pollState = step.state
+  if (step.log) {
+    const write = step.log.level === 'info' ? console.log : step.log.level === 'warn' ? console.warn : console.error
+    write(`[jarvis:telegram] ${step.log.message}`)
+  }
+  return step.delayMs
+}
+
+/** Returns the delay (ms) before the next poll. */
 async function pollOnce(token, chatId) {
   let data
   try {
     data = await getUpdates(token, updateOffset)
   } catch (err) {
-    console.error(`[jarvis:telegram] poll failed: ${err.message}`)
-    return
+    return applyPollOutcome(
+      isPollConflict(err) ? { kind: 'conflict' } : { kind: 'error', message: `poll failed: ${err.message}` },
+    )
   }
   if (data?.ok !== true) {
-    console.error(`[jarvis:telegram] Telegram API error: ${data?.description ?? 'unknown error'} — check JARVIS_TELEGRAM_BOT_TOKEN`)
+    return applyPollOutcome(
+      isPollConflict(data)
+        ? { kind: 'conflict' }
+        : {
+            kind: 'error',
+            message: `Telegram API error: ${data?.description ?? 'unknown error'} — check JARVIS_TELEGRAM_BOT_TOKEN`,
+            retryAfterS: data?.parameters?.retry_after,
+          },
+    )
+  }
+  const nextDelay = applyPollOutcome({ kind: 'ok' })
+  await processUpdates(data.result ?? [], (update) => handleUpdate(update, token, chatId), (err) => {
+    console.error(`[jarvis:telegram] update handling failed: ${err?.name}: ${err?.message}`)
+  })
+  return nextDelay
+}
+
+/**
+ * Runs `handle` over every update, isolating failures so one bad update
+ * can't skip the rest of the batch (a later one may be /halt).
+ */
+export async function processUpdates(updates, handle, onError) {
+  for (const update of updates) {
+    try {
+      await handle(update)
+    } catch (err) {
+      onError(err)
+    }
+  }
+}
+
+async function handleUpdate(update, token, chatId) {
+  if (!Number.isFinite(update?.update_id)) return
+  updateOffset = update.update_id + 1
+  const msg = update.message
+  if (!msg?.text) return
+  if (!isAuthorizedMessage(msg, chatId)) return
+
+  const name = parseCommand(msg.text)
+  if (name === 'unknown' && !isSlashCommand(msg.text) && dispatchChat) {
+    // Deliberately not awaited: a slow agent answer must not block the poll
+    // loop, or /halt sent while it runs would sit unread until it finished.
+    // Concurrency is bounded inside the dispatcher instead.
+    void dispatchChat(msg.text)
+      .then((reply) => replyChunks(token, chatId, reply))
+      .catch((err) => console.error(`[jarvis:telegram] chat reply failed: ${err.message}`))
     return
   }
-  for (const update of data.result ?? []) {
-    updateOffset = update.update_id + 1
-    const msg = update.message
-    if (!msg?.text) continue
-    if (!isAuthorizedMessage(msg, chatId)) continue
+  const handler = commands.get(name)
+  try {
+    const reply = handler
+      ? await handler()
+      : `I understand: ${[...commands.keys()].join(', ')}.`
+    await sendMessage(token, chatId, reply)
+  } catch (err) {
+    console.error(`[jarvis:telegram] command handling failed: ${err.message}`)
+  }
+}
 
-    const name = parseCommand(msg.text)
-    if (name === 'unknown' && !isSlashCommand(msg.text) && dispatchChat) {
-      // Deliberately not awaited: a slow agent answer must not block the poll
-      // loop, or /halt sent while it runs would sit unread until it finished.
-      // Concurrency is bounded inside the dispatcher instead.
-      void dispatchChat(msg.text)
-        .then((reply) => replyChunks(token, chatId, reply))
-        .catch((err) => console.error(`[jarvis:telegram] chat reply failed: ${err.message}`))
-      continue
-    }
-    const handler = commands.get(name)
-    try {
-      const reply = handler
-        ? await handler()
-        : `I understand: ${[...commands.keys()].join(', ')}.`
-      await sendMessage(token, chatId, reply)
-    } catch (err) {
-      console.error(`[jarvis:telegram] command handling failed: ${err.message}`)
-    }
+/**
+ * One loop iteration's scheduling decision: resolves to the delay before the
+ * next poll and never rejects. A rejection here means the poll itself was
+ * healthy (poll failures are handled inside pollOnce), so use the normal
+ * interval rather than punishing the HALT channel with a backoff.
+ */
+export async function runPollStep(pollFn, onError) {
+  try {
+    return await pollFn()
+  } catch (err) {
+    // A failing logger must not be able to kill the loop that carries HALT.
+    try { onError(err) } catch { /* ignore */ }
+    return POLL_INTERVAL_MS
   }
 }
 
 function startPolling(token, chatId) {
   const tick = async () => {
-    await pollOnce(token, chatId)
-    pollTimer = setTimeout(tick, 1000)
+    const delay = await runPollStep(
+      () => pollOnce(token, chatId),
+      (err) => console.error(`[jarvis:telegram] poll loop error: ${err?.name}: ${err?.message}`),
+    )
+    pollTimer = setTimeout(tick, Number.isFinite(delay) && delay >= 1000 ? delay : 1000)
   }
   void tick()
   return () => {
