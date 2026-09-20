@@ -549,6 +549,7 @@ export async function getTradingStatusText() {
 
 const SNAPSHOT_TTL_MS = 10_000
 let snapshotCache = { atMs: 0, value: null }
+let snapshotInflight = null
 
 /**
  * Structured, JSON-safe status for the HUD dashboard. Unlike the text
@@ -560,12 +561,20 @@ export async function getTradingSnapshot() {
   if (!state.armed || !state.config) return { enabled: false }
   const nowMs = Date.now()
   if (snapshotCache.value && nowMs - snapshotCache.atMs < SNAPSHOT_TTL_MS) return snapshotCache.value
+  // Concurrent callers share one broker round-trip.
+  snapshotInflight ??= buildSnapshotFromBroker(nowMs).finally(() => { snapshotInflight = null })
+  return snapshotInflight
+}
 
+async function buildSnapshotFromBroker(nowMs) {
   const config = state.config
-  const [journalTail, positions, pl] = await Promise.all([
+  const [journalTail, positions, pl, liveStopLoss] = await Promise.all([
     readJournalTail(JOURNAL_PATH, 10),
     fetchOpenPositions(config).catch(() => null),
     fetchAccountPL(config).catch(() => null),
+    // In-memory state.hasStopLoss is only written at fill/boot and never
+    // re-verified, so the HUD must ask the broker each time.
+    fetchOpenTradesStopLossStatus(config).catch(() => null),
   ])
   // Same guard as getTradingStatusText: before dayKey is set the baseline is
   // 0, so realizedPL - 0 would be the account's lifetime P&L, not today's.
@@ -574,16 +583,17 @@ export async function getTradingSnapshot() {
     armed: state.armed,
     halted: state.halted,
     haltReason: state.haltReason,
-    pairs: state.config.pairs,
+    pairs: config.pairs,
     openPositions: positions,
-    hasStopLoss: state.hasStopLoss,
+    liveStopLoss,
     dailyRealizedPL: established ? pl.realizedPL - state.dayStartRealizedPL : null,
     unrealizedPL: pl ? pl.unrealizedPL : null,
     maxDailyLoss: config.maxDailyLoss,
     journal: journalTail,
     nowMs,
   })
-  snapshotCache = { atMs: nowMs, value }
+  // A halt during the fetch clears the cache; don't resurrect a pre-halt value.
+  if (!state.halted || value.halted) snapshotCache = { atMs: nowMs, value }
   return value
 }
 

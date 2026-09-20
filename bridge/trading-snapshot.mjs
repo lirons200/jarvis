@@ -30,13 +30,27 @@ function finiteOrNull(n) {
 }
 
 /**
+ * Per-pair stop-loss flag from the live broker check, never from cached
+ * memory. 'unknown' (broker check failed or gave no answer for an open
+ * position) must never be rendered as protected.
+ * @returns {'ok'|'missing'|'unknown'|null} null = no open position
+ */
+export function deriveStopLossStatus(netUnits, liveStatus, pair) {
+  if (netUnits === 0) return null
+  if (liveStatus === null || liveStatus === undefined) return 'unknown'
+  const live = liveStatus[pair]
+  if (!live) return 'unknown'
+  return live.hasStopLoss === true ? 'ok' : 'missing'
+}
+
+/**
  * @param {object} i
  * @param {boolean} i.armed
  * @param {boolean} i.halted
  * @param {string|null} i.haltReason
  * @param {string[]} i.pairs
  * @param {Record<string,{longUnits:number,shortUnits:number}>|null} i.openPositions null = broker unreachable
- * @param {Record<string,boolean>} i.hasStopLoss
+ * @param {Record<string,{hasStopLoss:boolean}>|null} i.liveStopLoss null = live check failed
  * @param {number|null} i.dailyRealizedPL null = not yet established / unknown
  * @param {number|null} i.unrealizedPL
  * @param {number} i.maxDailyLoss
@@ -52,8 +66,7 @@ export function buildTradingSnapshot(i) {
         return {
           pair,
           units: netUnits,
-          // A stop-loss is only meaningful for an open position.
-          stopLossConfirmed: netUnits !== 0 ? i.hasStopLoss[pair] === true : null,
+          stopLoss: deriveStopLossStatus(netUnits, i.liveStopLoss, pair),
         }
       })
 

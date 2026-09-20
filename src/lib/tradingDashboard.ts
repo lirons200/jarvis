@@ -8,8 +8,8 @@ import { BRIDGE_HTTP_URL } from '../config'
 export type TradingPosition = {
   pair: string
   units: number
-  /** null when there is no open position to protect. */
-  stopLossConfirmed: boolean | null
+  /** From a live broker check. null = no open position; 'unknown' = check failed. */
+  stopLoss: 'ok' | 'missing' | 'unknown' | null
 }
 
 export type TradingJournalEntry = {
@@ -70,9 +70,18 @@ export function openPositions(s: Extract<TradingSnapshot, { enabled: true }>): T
   return (s.positions ?? []).filter((p) => p.units !== 0)
 }
 
-/** True when any open position lacks a confirmed stop-loss — the one thing worth alarming over. */
+/** True when any open position lacks a confirmed stop-loss (missing OR unknown) — the one thing worth alarming over. */
 export function hasUnprotectedPosition(s: Extract<TradingSnapshot, { enabled: true }>): boolean {
-  return openPositions(s).some((p) => p.stopLossConfirmed !== true)
+  return openPositions(s).some((p) => p.stopLoss !== 'ok')
+}
+
+export const STALE_AFTER_MS = 30_000
+
+/** A snapshot with an unparseable timestamp is treated as stale: never reassure on data of unknown age. */
+export function isSnapshotStale(at: string, nowMs: number, maxAgeMs = STALE_AFTER_MS): boolean {
+  const t = Date.parse(at)
+  if (!Number.isFinite(t)) return true
+  return nowMs - t > maxAgeMs
 }
 
 /** Newest first, capped, for display. */
@@ -142,9 +151,9 @@ export const FIXTURE_TRADING_SNAPSHOT: TradingSnapshot = {
   halted: false,
   haltReason: null,
   positions: [
-    { pair: 'EUR_USD', units: 1000, stopLossConfirmed: true },
-    { pair: 'GBP_USD', units: 0, stopLossConfirmed: null },
-    { pair: 'USD_JPY', units: 500, stopLossConfirmed: false },
+    { pair: 'EUR_USD', units: 1000, stopLoss: 'ok' },
+    { pair: 'GBP_USD', units: 0, stopLoss: null },
+    { pair: 'USD_JPY', units: 500, stopLoss: 'missing' },
   ],
   pnl: { realizedToday: -12.4, unrealized: 3.1, dailyLossLimit: 50 },
   journal: [

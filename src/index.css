@@ -1957,4 +1957,15 @@ kbd {
 .trading-armed .trading-state { color: #5fe0a0; }
 .trading-bar { height: 3px; background: rgba(127, 220, 238, 0.15); border-radius: 2px; }
 .trading-bar-fill { height: 100%; background: #e0a05f; border-radius: 2px; }
+.trading-stale { opacity: 0.45; }
 .trading-journal { opacity: 0.6; font-size: 10px; margin-top: 4px; }
+
+/* Below 900px the right rail sits at right:30px; dock the panel bottom-right, clear of it. */
+@media (max-width: 900px) {
+  .trading-panel { top: auto; bottom: 64px; right: 12px; width: 170px; }
+}
+
+/* Phone width: no free corner that clears the rails, log and ticker, so hide rather than overlap. */
+@media (max-width: 520px) {
+  .trading-panel { display: none; }
+}

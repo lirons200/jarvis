@@ -1,13 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildTradingSnapshot, sanitizeJournalEntry } from './trading-snapshot.mjs'
+import { buildTradingSnapshot, sanitizeJournalEntry, deriveStopLossStatus } from './trading-snapshot.mjs'
 import { getTradingSnapshot } from './trading.mjs'
 
 const base = {
   armed: true, halted: false, haltReason: null,
   pairs: ['EUR_USD', 'GBP_USD'],
   openPositions: { EUR_USD: { longUnits: 1000, shortUnits: 0 } },
-  hasStopLoss: { EUR_USD: true },
+  liveStopLoss: { EUR_USD: { tradeId: '1', hasStopLoss: true } },
   dailyRealizedPL: -5, unrealizedPL: 2, maxDailyLoss: 50,
   journal: [], nowMs: 0,
 }
@@ -15,16 +15,22 @@ const base = {
 test('snapshot reports per-pair units and stop-loss only for open positions', () => {
   const s = buildTradingSnapshot(base)
   assert.deepEqual(s.positions, [
-    { pair: 'EUR_USD', units: 1000, stopLossConfirmed: true },
-    { pair: 'GBP_USD', units: 0, stopLossConfirmed: null },
+    { pair: 'EUR_USD', units: 1000, stopLoss: 'ok' },
+    { pair: 'GBP_USD', units: 0, stopLoss: null },
   ])
   assert.equal(s.pnl.dailyLossLimit, 50)
   assert.equal(s.at, '1970-01-01T00:00:00.000Z')
 })
 
-test('an open position with no tracked stop-loss is reported unconfirmed', () => {
-  const s = buildTradingSnapshot({ ...base, hasStopLoss: {} })
-  assert.equal(s.positions[0].stopLossConfirmed, false)
+test('stop-loss flag comes from the live check: missing, unknown on failure, never ok by default', () => {
+  const live = { EUR_USD: { hasStopLoss: false } }
+  assert.equal(deriveStopLossStatus(1000, live, 'EUR_USD'), 'missing')
+  assert.equal(deriveStopLossStatus(1000, { EUR_USD: { hasStopLoss: true } }, 'EUR_USD'), 'ok')
+  assert.equal(deriveStopLossStatus(1000, null, 'EUR_USD'), 'unknown') // live call failed
+  assert.equal(deriveStopLossStatus(1000, {}, 'EUR_USD'), 'unknown') // broker listed no trade
+  assert.equal(deriveStopLossStatus(0, null, 'EUR_USD'), null)
+  const s = buildTradingSnapshot({ ...base, liveStopLoss: null })
+  assert.equal(s.positions[0].stopLoss, 'unknown')
 })
 
 test('unreachable broker yields null positions, NaN P&L yields null, and it stays JSON-safe', () => {

@@ -33,7 +33,7 @@ import {
 import { startAnalyser, micLevel } from './lib/audio'
 import { probeCapabilities } from './lib/capabilities'
 import { startForexPolling } from './lib/forexTicker'
-import { startTradingPolling, FIXTURE_TRADING_SNAPSHOT } from './lib/tradingDashboard'
+import { startTradingPolling, FIXTURE_TRADING_SNAPSHOT, type TradingSnapshot } from './lib/tradingDashboard'
 import { env } from './config'
 
 /**
@@ -549,8 +549,11 @@ export default function App() {
   // the panel is viewable without broker credentials.
   useEffect(() => {
     if (import.meta.env.DEV && location.search.includes('tradingFixture=1')) {
-      store.getState().setTrading(FIXTURE_TRADING_SNAPSHOT)
-      return
+      // Re-stamp so the staleness check doesn't dim the fixture.
+      const push = () => store.getState().setTrading({ ...FIXTURE_TRADING_SNAPSHOT, at: new Date().toISOString() } as TradingSnapshot)
+      push()
+      const t = setInterval(push, 10_000)
+      return () => clearInterval(t)
     }
     return startTradingPolling((snap) => store.getState().setTrading(snap))
     // eslint-disable-next-line react-hooks/exhaustive-deps

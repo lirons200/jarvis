@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   tradingState, formatPnl, lossBudgetUsed, openPositions, hasUnprotectedPosition,
-  recentJournal, formatJournalLine, parseTradingSnapshot, FIXTURE_TRADING_SNAPSHOT,
+  recentJournal, formatJournalLine, parseTradingSnapshot, isSnapshotStale, FIXTURE_TRADING_SNAPSHOT,
 } from './tradingDashboard'
 
 const fx = FIXTURE_TRADING_SNAPSHOT
@@ -32,7 +32,7 @@ test('tradingState prioritises halted over armed', () => {
 test('openPositions drops flat pairs; hasUnprotectedPosition flags a missing stop', () => {
   assert.deepEqual(openPositions(fx).map((p) => p.pair), ['EUR_USD', 'USD_JPY'])
   assert.equal(hasUnprotectedPosition(fx), true)
-  assert.equal(hasUnprotectedPosition({ ...fx, positions: [{ pair: 'EUR_USD', units: 1, stopLossConfirmed: true }] }), false)
+  assert.equal(hasUnprotectedPosition({ ...fx, positions: [{ pair: 'EUR_USD', units: 1, stopLoss: 'ok' }] }), false)
   assert.equal(hasUnprotectedPosition({ ...fx, positions: null }), false)
 })
 
@@ -49,4 +49,15 @@ test('parseTradingSnapshot accepts the disabled and enabled shapes and rejects j
   assert.equal(parseTradingSnapshot(null), null)
   assert.equal(parseTradingSnapshot({ enabled: true }), null)
   assert.equal(parseTradingSnapshot('x'), null)
+})
+
+test('an unknown stop-loss counts as unprotected', () => {
+  assert.equal(hasUnprotectedPosition({ ...fx, positions: [{ pair: 'EUR_USD', units: 1, stopLoss: 'unknown' }] }), true)
+})
+
+test('isSnapshotStale flags snapshots older than 30s and unparseable timestamps', () => {
+  const now = Date.parse('2026-01-01T00:01:00Z')
+  assert.equal(isSnapshotStale('2026-01-01T00:00:45Z', now), false)
+  assert.equal(isSnapshotStale('2026-01-01T00:00:29Z', now), true)
+  assert.equal(isSnapshotStale('garbage', now), true)
 })
