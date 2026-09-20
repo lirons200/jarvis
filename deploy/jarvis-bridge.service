@@ -14,16 +14,23 @@ WorkingDirectory=/opt/jarvis
 EnvironmentFile=/etc/jarvis/bridge.env
 Environment=NODE_ENV=production
 Environment=JARVIS_BRIDGE_HOST=127.0.0.1
+# The Claude Agent SDK writes session/config state under $HOME/.claude (and
+# $HOME/.claude.json). ProtectHome would make a real home read-only, so give the
+# service its own writable HOME under /var/lib (created by StateDirectory).
+Environment=HOME=/var/lib/jarvis
+StateDirectory=jarvis
+StateDirectoryMode=0700
 ExecStart=/usr/bin/node bridge/server.mjs
 Restart=always
 RestartSec=5
 
-# Hardening. bridge/data must stay writable (trade journal, daily state).
+# Hardening. Writable: bridge/data (trade journal, daily state) and the
+# service HOME above (Claude SDK state). Everything else is read-only.
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=true
-ReadWritePaths=/opt/jarvis/bridge/data
+ReadWritePaths=/opt/jarvis/bridge/data /var/lib/jarvis
 
 [Install]
 WantedBy=multi-user.target

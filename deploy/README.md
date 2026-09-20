@@ -1,5 +1,7 @@
 # Running the JARVIS bridge on a Linux server
 
+> **WARNING: automatic re-arming.** Both `restart: unless-stopped` (Docker) and `Restart=always` (systemd) restart the bridge after a crash, a reboot or a Docker daemon restart. If `/etc/jarvis/bridge.env` contains `JARVIS_TRADING_ENABLED=true` and `JARVIS_TRADING_ARM=true`, **trading re-arms itself every time, with nobody watching**. The "arm at every boot" safeguard only helps if the env file does not say `ARM=true`. Keep `JARVIS_TRADING_ARM` out of the env file whenever you are not actively watching the bridge, and add it only for a supervised session (then recreate the container / restart the unit). The env template below is safe by default: trading disabled, ARM unset.
+
 What runs where:
 
 - **Server (24/7):** the bridge (`bridge/server.mjs`): OANDA forex polling, trading automation (only if deliberately enabled) and Telegram remote control.
@@ -52,7 +54,9 @@ Variables the bridge reads (from the sources; `.env.example` lists only the gene
 | Trading | `JARVIS_TRADING_ENABLED`, `JARVIS_TRADING_ARM`, `JARVIS_TRADING_PAIRS`, `JARVIS_TRADING_MAX_POSITION_UNITS`, `JARVIS_TRADING_MAX_TOTAL_UNITS`, `JARVIS_TRADING_MAX_DAILY_LOSS`, `JARVIS_TRADING_ATR_STOP_MULTIPLIER`, `JARVIS_TRADING_POLL_INTERVAL_MS` |
 | Telegram | `JARVIS_TELEGRAM_BOT_TOKEN`, `JARVIS_TELEGRAM_CHAT_ID` |
 
-Docker env files take `KEY=value` lines with no quotes and no `export`.
+Docker env files take `KEY=value` lines with no quotes and no `export`. Do not add `JARVIS_TRADING_ARM` here except for a supervised session (see the warning at the top).
+
+Note: for systemd, values in `EnvironmentFile` override the unit's `Environment=` lines, so a `JARVIS_BRIDGE_HOST` in the env file wins over the unit's `127.0.0.1`. Do not set it there to anything public.
 
 ### Claude authentication (be honest about this)
 
@@ -61,7 +65,7 @@ The bridge uses the Claude Agent SDK, which "authenticates off your Claude Code 
 - Set `ANTHROPIC_API_KEY` in the env file (pay-per-use API billing), or
 - Generate a long-lived token on your PC with `claude setup-token` and set `CLAUDE_CODE_OAUTH_TOKEN` (uses your subscription).
 
-Verify against the current Claude Code docs before relying on either; this repo does not test it. Importantly, **forex polling, trading and the Telegram `status`/`halt` commands do not call Claude**. They work with no Claude credential at all. Only chat/voice turns coming from the UI need it, and those would run the agent (and its tools) on the server, not on your PC. Leave `JARVIS_ALLOW_WRITES` unset on the server.
+Verify against the current Claude Code docs before relying on either; this repo does not test it. Importantly, **forex polling, trading and the Telegram `status`/`halt` commands do not call Claude**. They work with no Claude credential at all. Only chat/voice turns coming from the UI need it, and those would run the agent (and its tools) on the server, not on your PC. Leave `JARVIS_ALLOW_WRITES` unset on the server. The SDK writes state under `$HOME/.claude` and `$HOME/.claude.json`: in Docker that is `/home/node` (container filesystem, lost on recreate), under systemd the unit sets `HOME=/var/lib/jarvis` (writable via `StateDirectory`/`ReadWritePaths`). The server also has no `~/.claude.json` with your MCP servers, so server-side agent turns lack the MCP tools you have on your PC (and the bridge's ElevenLabs-key-from-MCP-config fallback finds nothing; set `ELEVENLABS_API_KEY` explicitly if wanted).
 
 ## 3. Start it
 
@@ -73,7 +77,7 @@ docker compose -f deploy/docker-compose.yml logs -f bridge
 curl -s http://127.0.0.1:8787/health
 ```
 
-`/health` returns `ok`, `uptime`, `version` and booleans only (`forexFeed`, `trading.{enabled,armed,halted}`, `telegram`, plus `tts`/`stt`). No secrets, account ids or positions.
+`/health` returns `ok`, `ready` (false while the bridge is still booting; subsystems then read as inactive), `uptime`, `version` and booleans only (`forexFeed`, `trading.{enabled,armed,halted}` (`enabled` = env flag set, `armed` = actually armed after boot reconciliation), `telegram`, plus `tts`/`stt`). No secrets, account ids or positions.
 
 The named volume `jarvis-data` holds `bridge/data` (trade journal `trading-journal.jsonl`, `trading-daily-state.json`). It survives `restart`, `up --build` and `down`. **`docker compose down -v` deletes it.** Back it up before you trade for real.
 

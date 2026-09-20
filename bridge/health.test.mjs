@@ -14,6 +14,7 @@ test('buildHealth reports booleans and uptime', () => {
   })
   assert.deepEqual(h, {
     ok: true,
+    ready: false,
     uptime: 12,
     version: '1.2.3',
     tts: true,
@@ -22,6 +23,25 @@ test('buildHealth reports booleans and uptime', () => {
     trading: { enabled: true, armed: true, halted: false },
     telegram: true,
   })
+})
+
+test('buildHealth boot-window shape: null configs, still ok, not ready', () => {
+  const h = buildHealth({
+    uptimeSeconds: 0,
+    version: '1',
+    tts: false,
+    stt: false,
+    forexFeed: null,
+    trading: { enabled: true, armed: Boolean(null), halted: false },
+    telegram: null,
+    ready: false,
+  })
+  assert.equal(h.ok, true)
+  assert.equal(h.ready, false)
+  assert.equal(h.forexFeed, false)
+  assert.equal(h.telegram, false)
+  assert.deepEqual(h.trading, { enabled: true, armed: false, halted: false })
+  assert.ok('tts' in h && 'stt' in h)
 })
 
 test('buildHealth coerces missing/odd input safely', () => {

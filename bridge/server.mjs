@@ -42,6 +42,10 @@ try {
 }
 
 const PORT = Number(process.env.JARVIS_BRIDGE_PORT ?? 8787)
+// Set as boot progresses; /health can be probed before then, so these start null.
+let TRADING_CONFIG = null
+let TELEGRAM_CONFIG = null
+let BOOTED = false
 // Loopback by default; the container sets 0.0.0.0 (published on 127.0.0.1 only).
 const HOST = process.env.JARVIS_BRIDGE_HOST ?? '127.0.0.1'
 let PKG_VERSION = 'unknown'
@@ -730,7 +734,8 @@ const handleRequest = async (req, res) => {
           tts: eleven,
           stt: eleven,
           forexFeed: Boolean(FOREX_CONFIG),
-          trading: { enabled: Boolean(TRADING_CONFIG), armed: Boolean(TRADING_CONFIG), halted: isTradingHalted() },
+          ready: BOOTED,
+          trading: { enabled: process.env.JARVIS_TRADING_ENABLED === 'true', armed: Boolean(TRADING_CONFIG), halted: isTradingHalted() },
           telegram: Boolean(TELEGRAM_CONFIG),
         }),
       ),
@@ -1532,7 +1537,7 @@ wss.on('connection', (socket) => {
 // client connecting during the await would fire 'connection' with no
 // listener attached, and the event — Node's plain EventEmitter doesn't queue
 // past emissions — would be silently lost.
-const TRADING_CONFIG = await initTrading((text) => {
+TRADING_CONFIG = await initTrading((text) => {
   // Pushed to every currently-connected client. If none is connected the
   // announcement is simply not spoken — the journal (see trading.mjs) is
   // the actual record, so nothing is lost, only the spoken convenience.
@@ -1554,7 +1559,8 @@ console.log(
     : '[jarvis] trading disabled — set JARVIS_TRADING_ENABLED=true and JARVIS_TRADING_ARM=true to enable',
 )
 
-const TELEGRAM_CONFIG = initTelegram()
+TELEGRAM_CONFIG = initTelegram()
+BOOTED = true
 if (TELEGRAM_CONFIG) {
   registerCommand('status', async () => getTradingStatusText())
   registerCommand('halt', async () => {

@@ -23,6 +23,5 @@ deploy
 *.md
 bridge/data
 bridge/**/*.test.mjs
-bridge/backtest.mjs
 logs
 *.log
