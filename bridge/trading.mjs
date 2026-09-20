@@ -566,10 +566,15 @@ export async function getTradingSnapshot() {
   return snapshotInflight
 }
 
-async function buildSnapshotFromBroker(nowMs) {
-  const config = state.config
+/**
+ * The broker-reading half of the snapshot, parameterised on its inputs so the
+ * read-only verification script (scripts/verify-trading-snapshot.mjs) runs the
+ * exact production path against a real account without arming anything.
+ * `run` = {armed, halted, haltReason}; `day` = {dayKey, dayStartRealizedPL}.
+ */
+export async function collectTradingSnapshot({ config, run, day, journalPath = JOURNAL_PATH, nowMs }) {
   const [journalTail, positions, pl, liveStopLoss] = await Promise.all([
-    readJournalTail(JOURNAL_PATH, 10),
+    readJournalTail(journalPath, 10),
     fetchOpenPositions(config).catch(() => null),
     fetchAccountPL(config).catch(() => null),
     // In-memory state.hasStopLoss is only written at fill/boot and never
@@ -578,20 +583,24 @@ async function buildSnapshotFromBroker(nowMs) {
   ])
   // Same guard as getTradingStatusText: before dayKey is set the baseline is
   // 0, so realizedPL - 0 would be the account's lifetime P&L, not today's.
-  const established = pl !== null && state.dayKey !== null
-  const value = buildTradingSnapshot({
-    armed: state.armed,
-    halted: state.halted,
-    haltReason: state.haltReason,
+  const established = pl !== null && day.dayKey !== null
+  return buildTradingSnapshot({
+    armed: run.armed,
+    halted: run.halted,
+    haltReason: run.haltReason,
     pairs: config.pairs,
     openPositions: positions,
     liveStopLoss,
-    dailyRealizedPL: established ? pl.realizedPL - state.dayStartRealizedPL : null,
+    dailyRealizedPL: established ? pl.realizedPL - day.dayStartRealizedPL : null,
     unrealizedPL: pl ? pl.unrealizedPL : null,
     maxDailyLoss: config.maxDailyLoss,
     journal: journalTail,
     nowMs,
   })
+}
+
+async function buildSnapshotFromBroker(nowMs) {
+  const value = await collectTradingSnapshot({ config: state.config, run: state, day: state, nowMs })
   // A halt during the fetch clears the cache; don't resurrect a pre-halt value.
   if (!state.halted || value.halted) snapshotCache = { atMs: nowMs, value }
   return value
