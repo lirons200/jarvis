@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   isPollConflict, nextBackoffMs, initialPollState, advancePollState,
-  POLL_INTERVAL_MS, CONFLICT_BACKOFF_BASE_MS, ERROR_BACKOFF_BASE_MS, BACKOFF_CAP_MS, BACKOFF_LOG_EVERY_MS,
+  POLL_INTERVAL_MS, CONFLICT_BACKOFF_BASE_MS, CONFLICT_BACKOFF_CAP_MS, processUpdates, runPollStep, ERROR_BACKOFF_BASE_MS, BACKOFF_CAP_MS, BACKOFF_LOG_EVERY_MS,
 } from './telegram.mjs'
 
 test('isPollConflict recognises both response shapes', () => {
@@ -18,9 +18,12 @@ test('isPollConflict recognises both response shapes', () => {
 test('nextBackoffMs escalates, doubles, and caps', () => {
   const seq = []
   let d = 0
-  for (let i = 0; i < 8; i++) { d = nextBackoffMs(d, CONFLICT_BACKOFF_BASE_MS); seq.push(d) }
-  assert.deepEqual(seq, [30000, 60000, 120000, 240000, 300000, 300000, 300000, 300000])
-  assert.ok(seq.every((x) => x <= BACKOFF_CAP_MS))
+  for (let i = 0; i < 8; i++) { d = nextBackoffMs(d, ERROR_BACKOFF_BASE_MS); seq.push(d) }
+  assert.deepEqual(seq, [5000, 10000, 20000, 40000, 80000, 160000, 300000, 300000])
+  const c = []
+  d = 0
+  for (let i = 0; i < 4; i++) { d = nextBackoffMs(d, CONFLICT_BACKOFF_BASE_MS, CONFLICT_BACKOFF_CAP_MS); c.push(d) }
+  assert.deepEqual(c, [30000, 60000, 60000, 60000])
 })
 
 test('healthy poller: normal interval, no log', () => {
@@ -39,19 +42,41 @@ test('conflict: logs once, backs off, throttles repeats, re-logs after 10 min', 
   let t = 0
   const delays = []
   let logs = 0
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 12; i++) {
     t += r.delayMs
     r = advancePollState(r.state, { kind: 'conflict' }, t)
     delays.push(r.delayMs)
     if (r.log) logs++
   }
-  assert.deepEqual(delays, [60000, 120000, 240000, 300000, 300000, 300000])
-  // t reaches 30+60+120+240+300+300 = 1050s, past the 600s throttle once.
-  assert.equal(logs, 1)
-  r = advancePollState(r.state, { kind: 'conflict' }, t + 1000)
-  assert.equal(r.log, null)
-  r = advancePollState(r.state, { kind: 'conflict' }, t + BACKOFF_LOG_EVERY_MS + 1000)
-  assert.ok(r.log)
+  assert.deepEqual(delays, Array(12).fill(60000))
+  assert.equal(logs, 1) // t crosses the 600s throttle once (30s + 60s * 10)
+})
+
+test('401 and 429 style bodies are not conflicts', () => {
+  assert.equal(isPollConflict({ ok: false, error_code: 401, description: 'Unauthorized' }), false)
+  assert.equal(isPollConflict({ ok: false, error_code: 429, parameters: { retry_after: 7 } }), false)
+})
+
+test('retry_after drives the delay, bounded by the cap', () => {
+  assert.equal(advancePollState(initialPollState(), { kind: 'error', retryAfterS: 7 }, 0).delayMs, 7000)
+  assert.equal(advancePollState(initialPollState(), { kind: 'error', retryAfterS: 99999 }, 0).delayMs, BACKOFF_CAP_MS)
+  assert.equal(advancePollState(initialPollState(), { kind: 'error' }, 0).delayMs, ERROR_BACKOFF_BASE_MS)
+})
+
+test('processUpdates: a throwing update does not skip later ones', async () => {
+  const seen = []
+  const errors = []
+  await processUpdates([1, 2, 3], async (u) => { if (u === 2) throw new Error('bad'); seen.push(u) }, (e) => errors.push(e.message))
+  assert.deepEqual(seen, [1, 3])
+  assert.deepEqual(errors, ['bad'])
+})
+
+test('runPollStep: a rejected poll reschedules at the normal interval', async () => {
+  const errors = []
+  const delay = await runPollStep(async () => { throw new Error('boom') }, (e) => errors.push(e.message))
+  assert.equal(delay, POLL_INTERVAL_MS)
+  assert.deepEqual(errors, ['boom'])
+  assert.equal(await runPollStep(async () => 30000, () => {}), 30000)
 })
 
 test('recovery resets state and logs once', () => {
