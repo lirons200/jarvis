@@ -1,0 +1,36 @@
+# systemd alternative to Docker. Install to /etc/systemd/system/jarvis-bridge.service
+# Assumes: code in /opt/jarvis, `npm ci --omit=dev` already run there, node 20+
+# at /usr/bin/node, an unprivileged user `jarvis`, secrets in /etc/jarvis/bridge.env.
+[Unit]
+Description=JARVIS bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jarvis
+Group=jarvis
+WorkingDirectory=/opt/jarvis
+EnvironmentFile=/etc/jarvis/bridge.env
+Environment=NODE_ENV=production
+Environment=JARVIS_BRIDGE_HOST=127.0.0.1
+# The Claude Agent SDK writes session/config state under $HOME/.claude (and
+# $HOME/.claude.json). ProtectHome would make a real home read-only, so give the
+# service its own writable HOME under /var/lib (created by StateDirectory).
+Environment=HOME=/var/lib/jarvis
+StateDirectory=jarvis
+StateDirectoryMode=0700
+ExecStart=/usr/bin/node bridge/server.mjs
+Restart=always
+RestartSec=5
+
+# Hardening. Writable: bridge/data (trade journal, daily state) and the
+# service HOME above (Claude SDK state). Everything else is read-only.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ReadWritePaths=-/opt/jarvis/bridge/data /var/lib/jarvis
+
+[Install]
+WantedBy=multi-user.target

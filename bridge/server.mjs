@@ -21,7 +21,7 @@ import { displayServer } from './panels.mjs'
 import { uiServer } from './ui.mjs'
 import { forexServer, forexRoute, initForex } from './forex.mjs'
 import { backtestServer } from './backtest.mjs'
-import { initTrading, tradingServer, tradingControlServer, getTradingStatusText, triggerHalt } from './trading.mjs'
+import { initTrading, tradingServer, tradingControlServer, getTradingStatusText, triggerHalt, isTradingHalted } from './trading.mjs'
 import { initTelegram, registerCommand, registerMessageHandler, announceToTelegram } from './telegram.mjs'
 import { mcpServerOf, mcpToolOf, isReadOnlySessionTool } from './tool-gate.mjs'
 import { chromeAvailable, chromeServer } from './chrome.mjs'
@@ -33,6 +33,7 @@ import { isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
 import { openRemote, proxyError, vetTarget, PROXY_UA } from './net.mjs'
 import { probeUrl, renderPage } from './page.mjs'
 import { fileURLToPath } from 'node:url'
+import { buildHealth } from './health.mjs'
 
 // Existing shell variables win; loadEnvFile never overrides them.
 try {
@@ -42,6 +43,18 @@ try {
 }
 
 const PORT = Number(process.env.JARVIS_BRIDGE_PORT ?? 8787)
+// Set as boot progresses; /health can be probed before then, so these start null.
+let TRADING_CONFIG = null
+let TELEGRAM_CONFIG = null
+let BOOTED = false
+// Loopback by default; the container sets 0.0.0.0 (published on 127.0.0.1 only).
+const HOST = process.env.JARVIS_BRIDGE_HOST ?? '127.0.0.1'
+let PKG_VERSION = 'unknown'
+try {
+  PKG_VERSION = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')).version
+} catch {
+  /* package.json absent — leave unknown */
+}
 
 /**
  * A crash here takes the whole assistant down mid-sentence, and most of what
@@ -713,7 +726,20 @@ const handleRequest = async (req, res) => {
     // student with nothing configured still has a working assistant.
     const eleven = Boolean(elevenKey())
     res.writeHead(200, { ...cors, 'content-type': 'application/json' })
-    return res.end(JSON.stringify({ ok: true, tts: eleven, stt: eleven }))
+    return res.end(
+      JSON.stringify(
+        buildHealth({
+          uptimeSeconds: process.uptime(),
+          version: PKG_VERSION,
+          tts: eleven,
+          stt: eleven,
+          forexFeed: Boolean(FOREX_CONFIG),
+          ready: BOOTED,
+          trading: { enabled: process.env.JARVIS_TRADING_ENABLED === 'true', armed: Boolean(TRADING_CONFIG), halted: isTradingHalted() },
+          telegram: Boolean(TELEGRAM_CONFIG),
+        }),
+      ),
+    )
   }
 
   if (req.method === 'GET' && req.url === '/forex/prices') {
@@ -1031,9 +1057,9 @@ const wss = new WebSocketServer({
     done(true)
   },
 })
-server.listen(PORT)
+server.listen(PORT, HOST)
 
-console.log(`[jarvis] bridge listening on ws://localhost:${PORT}`)
+console.log(`[jarvis] bridge listening on ws://${HOST}:${PORT}`)
 console.log(
   `[jarvis] speech ${elevenKey() ? 'via ElevenLabs (key from MCP config)' : 'using browser fallback voice'}`,
 )
@@ -1511,7 +1537,7 @@ wss.on('connection', (socket) => {
 // client connecting during the await would fire 'connection' with no
 // listener attached, and the event — Node's plain EventEmitter doesn't queue
 // past emissions — would be silently lost.
-const TRADING_CONFIG = await initTrading((text) => {
+TRADING_CONFIG = await initTrading((text) => {
   // Pushed to every currently-connected client. If none is connected the
   // announcement is simply not spoken — the journal (see trading.mjs) is
   // the actual record, so nothing is lost, only the spoken convenience.
@@ -1599,7 +1625,8 @@ async function askJarvisFromTelegram(text, signal) {
   }
 }
 
-const TELEGRAM_CONFIG = initTelegram()
+TELEGRAM_CONFIG = initTelegram()
+BOOTED = true
 if (TELEGRAM_CONFIG) {
   registerCommand('status', async () => getTradingStatusText())
   registerCommand('halt', async () => {

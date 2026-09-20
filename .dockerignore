@@ -1,0 +1,27 @@
+# Build context is the repo root (see deploy/docker-compose.yml). Keep secrets
+# and everything the bridge does not need out of the image.
+.env
+.env.*
+*.local
+**/.env
+**/.env.*
+node_modules
+**/node_modules
+.git
+.github
+.claude
+.superpowers
+docs
+dist
+public
+src
+index.html
+vite.config.ts
+tsconfig*.json
+scripts
+deploy
+*.md
+bridge/data
+bridge/**/*.test.mjs
+logs
+*.log
