@@ -31,6 +31,14 @@ import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
 import { openRemote, proxyError, vetTarget, PROXY_UA } from './net.mjs'
 import { probeUrl, renderPage } from './page.mjs'
+import { fileURLToPath } from 'node:url'
+
+// Existing shell variables win; loadEnvFile never overrides them.
+try {
+  process.loadEnvFile(fileURLToPath(new URL('../.env.local', import.meta.url)))
+} catch {
+  /* no .env.local — run on shell environment alone */
+}
 
 const PORT = Number(process.env.JARVIS_BRIDGE_PORT ?? 8787)
 
