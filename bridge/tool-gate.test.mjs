@@ -4,7 +4,10 @@ import { isReadOnlySessionTool, mcpServerOf } from './tool-gate.mjs'
 
 const cases = [
   ['mcp__jarvis_forex__forex_price', true],
-  ['mcp__jarvis_forex__anything', true],
+  ['mcp__jarvis_forex__anything', false],
+  ['mcp__jarvis_backtest__backtest_run2', false],
+  ['mcp__jarvis_trading__trading_halt', false],
+  ['mcp__jarvis_forex__forex_price ', false],
   ['mcp__jarvis_backtest__backtest_run', true],
   ['mcp__jarvis_trading__trading_status', true],
   ['mcp__jarvis_trading_control__trading_halt', false],

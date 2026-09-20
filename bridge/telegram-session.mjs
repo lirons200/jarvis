@@ -33,8 +33,9 @@ export function telegramSessionOptions({ abortController, systemPrompt, model, e
     },
     strictMcpConfig: true,
     tools: [],
-    // Server-wide `mcp__<server>` rules: auto-approve only these three.
-    allowedTools: ['mcp__jarvis_forex', 'mcp__jarvis_backtest', 'mcp__jarvis_trading'],
+    // Empty on purpose: allowedTools auto-approves before canUseTool, so nothing
+    // is pre-allowed and the exact-name gate below decides every call.
+    allowedTools: [],
     disallowedTools: [
       ...READ_ONLY_BUILTINS, ...WRITE_BUILTINS,
       'mcp__jarvis_trading_control', 'mcp__jarvis', 'mcp__jarvis_ui',
