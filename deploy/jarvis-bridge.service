@@ -1,0 +1,29 @@
+# systemd alternative to Docker. Install to /etc/systemd/system/jarvis-bridge.service
+# Assumes: code in /opt/jarvis, `npm ci --omit=dev` already run there, node 20+
+# at /usr/bin/node, an unprivileged user `jarvis`, secrets in /etc/jarvis/bridge.env.
+[Unit]
+Description=JARVIS bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jarvis
+Group=jarvis
+WorkingDirectory=/opt/jarvis
+EnvironmentFile=/etc/jarvis/bridge.env
+Environment=NODE_ENV=production
+Environment=JARVIS_BRIDGE_HOST=127.0.0.1
+ExecStart=/usr/bin/node bridge/server.mjs
+Restart=always
+RestartSec=5
+
+# Hardening. bridge/data must stay writable (trade journal, daily state).
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ReadWritePaths=/opt/jarvis/bridge/data
+
+[Install]
+WantedBy=multi-user.target

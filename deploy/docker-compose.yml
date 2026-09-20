@@ -1,0 +1,28 @@
+# Run from the repo root on the server:
+#   docker compose -f deploy/docker-compose.yml up -d --build
+services:
+  bridge:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: jarvis-bridge:local
+    restart: unless-stopped
+    # Server-side secrets file, created by hand, mode 600, NEVER in the repo.
+    env_file: /etc/jarvis/bridge.env
+    environment:
+      JARVIS_BRIDGE_HOST: 0.0.0.0   # inside the container only; see ports below
+    ports:
+      # Loopback on the host ONLY. Never publish 8787 on a public interface.
+      - "127.0.0.1:8787:8787"
+    volumes:
+      # Trade journal and daily-state survive restarts and rebuilds.
+      - jarvis-data:/app/bridge/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+
+volumes:
+  jarvis-data:

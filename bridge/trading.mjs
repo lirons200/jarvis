@@ -551,6 +551,10 @@ export async function getTradingStatusText() {
  * and so a future caller (a scheduled safety check, say) has an obvious
  * place to hook in without duplicating haltTrading's own logic.
  */
+export function isTradingHalted() {
+  return state.halted
+}
+
 export function triggerHalt(source) {
   haltTrading(`halted via ${source}`)
 }
