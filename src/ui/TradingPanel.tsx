@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import {
-  tradingState, formatPnl, lossBudgetUsed, openPositions,
-  hasUnprotectedPosition, recentJournal, formatJournalLine, isSnapshotStale,
+  formatPnl, lossBudgetUsed, openPositions, recentJournal, formatJournalLine,
+  isSnapshotStale, statusLabel, stopLossLabel, protectionWarning, needsAttention,
 } from '../lib/tradingDashboard'
 
 /**
@@ -21,7 +21,7 @@ export function TradingPanel() {
   if (!snap || !snap.enabled) return null
 
   const stale = isSnapshotStale(snap.at, nowMs)
-  const state = tradingState(snap)
+  const warning = protectionWarning(snap, stale)
   const positions = openPositions(snap)
   const used = lossBudgetUsed(snap.pnl)
   const total = snap.pnl.realizedToday === null || snap.pnl.unrealized === null
@@ -29,12 +29,13 @@ export function TradingPanel() {
     : snap.pnl.realizedToday + snap.pnl.unrealized
 
   return (
-    <aside className={`trading-panel trading-${state}${stale ? ' trading-stale' : ''}`}>
+    <aside className={`trading-panel trading-${snap.halted ? 'halted' : 'live'}${stale ? ' trading-stale' : ''}`}>
       <div className="trading-head">
         <span className="trading-title">TRADING</span>
-        <span className="trading-state">{stale ? 'STALE' : state.toUpperCase()}</span>
+        <span className="trading-state">{statusLabel(snap, stale)}</span>
       </div>
       {snap.halted && snap.haltReason && <div className="trading-halt">{snap.haltReason}</div>}
+      {needsAttention(snap, stale) && <span className="trading-badge">!</span>}
 
       <div className="trading-row">
         <span>P&amp;L today</span>
@@ -50,11 +51,11 @@ export function TradingPanel() {
           <span>{p.pair.replace('_', '/')}</span>
           <span>
             {p.units}
-            {stale ? '' : p.stopLoss === 'ok' ? ' SL ok' : p.stopLoss === 'unknown' ? ' SL ?' : ' NO STOP'}
+            {' '}{stopLossLabel(p, stale)}
           </span>
         </div>
       ))}
-      {!stale && hasUnprotectedPosition(snap) && <div className="trading-warn">position without confirmed stop-loss</div>}
+      {warning && <div className="trading-warn">{warning}</div>}
 
       <div className="trading-journal">
         {recentJournal(snap.journal).map((e, i) => (

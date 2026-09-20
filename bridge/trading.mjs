@@ -603,7 +603,10 @@ export async function tradingRoute(req, res, cors) {
   try {
     body = await getTradingSnapshot()
   } catch {
-    body = { enabled: false }
+    // Not {enabled:false}: that would make the panel vanish while armed. A
+    // non-200 makes the client keep its last snapshot, which goes visibly STALE.
+    res.writeHead(503, { ...cors, 'content-type': 'application/json' })
+    return res.end(JSON.stringify({ error: 'snapshot unavailable' }))
   }
   res.writeHead(200, { ...cors, 'content-type': 'application/json' })
   res.end(JSON.stringify(body))

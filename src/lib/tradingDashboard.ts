@@ -81,7 +81,40 @@ export const STALE_AFTER_MS = 30_000
 export function isSnapshotStale(at: string, nowMs: number, maxAgeMs = STALE_AFTER_MS): boolean {
   const t = Date.parse(at)
   if (!Number.isFinite(t)) return true
-  return nowMs - t > maxAgeMs
+  const age = nowMs - t
+  // A timestamp well in the future (clock skew, bad data) is not "fresh" either.
+  return age > maxAgeMs || age < -FUTURE_TOLERANCE_MS
+}
+
+const FUTURE_TOLERANCE_MS = 5_000
+
+type Enabled = Extract<TradingSnapshot, { enabled: true }>
+
+/** Header label. A stale snapshot that was halted keeps saying HALTED — halted is the safe state to remember. */
+export function statusLabel(s: Enabled, stale: boolean): string {
+  const state = tradingState(s).toUpperCase()
+  if (!stale) return state
+  return s.halted ? 'STALE · HALTED' : 'STALE'
+}
+
+/** Stale data can't vouch for any stop-loss, so every open position reads "SL ?". */
+export function stopLossLabel(p: TradingPosition, stale: boolean): string {
+  if (stale) return 'SL ?'
+  if (p.stopLoss === 'ok') return 'SL ok'
+  if (p.stopLoss === 'unknown') return 'SL ?'
+  return 'NO STOP'
+}
+
+/** Warning line, or null. Stale + any open position must warn: an unprotected position may be hiding behind old data. */
+export function protectionWarning(s: Enabled, stale: boolean): string | null {
+  if (openPositions(s).length === 0) return null
+  if (stale) return 'status unknown — stop-loss unverified'
+  return hasUnprotectedPosition(s) ? 'position without confirmed stop-loss' : null
+}
+
+/** Drives the minimal badge shown when the full panel is hidden on narrow screens. */
+export function needsAttention(s: Enabled, stale: boolean): boolean {
+  return s.halted || protectionWarning(s, stale) !== null
 }
 
 /** Newest first, capped, for display. */

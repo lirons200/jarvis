@@ -2,7 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   tradingState, formatPnl, lossBudgetUsed, openPositions, hasUnprotectedPosition,
-  recentJournal, formatJournalLine, parseTradingSnapshot, isSnapshotStale, FIXTURE_TRADING_SNAPSHOT,
+  recentJournal, formatJournalLine, parseTradingSnapshot, isSnapshotStale,
+  statusLabel, stopLossLabel, protectionWarning, needsAttention, FIXTURE_TRADING_SNAPSHOT,
 } from './tradingDashboard'
 
 const fx = FIXTURE_TRADING_SNAPSHOT
@@ -60,4 +61,30 @@ test('isSnapshotStale flags snapshots older than 30s and unparseable timestamps'
   assert.equal(isSnapshotStale('2026-01-01T00:00:45Z', now), false)
   assert.equal(isSnapshotStale('2026-01-01T00:00:29Z', now), true)
   assert.equal(isSnapshotStale('garbage', now), true)
+})
+
+test('a far-future timestamp is stale, small skew is tolerated', () => {
+  const now = Date.parse('2026-01-01T00:00:00Z')
+  assert.equal(isSnapshotStale('2026-01-01T00:00:03Z', now), false)
+  assert.equal(isSnapshotStale('2026-01-01T00:01:00Z', now), true)
+})
+
+test('stale + open position => every SL reads "?" and the warning is present', () => {
+  const stale = true
+  for (const p of openPositions(fx)) assert.equal(stopLossLabel(p, stale), 'SL ?')
+  assert.equal(protectionWarning(fx, stale), 'status unknown — stop-loss unverified')
+  assert.equal(needsAttention(fx, stale), true)
+})
+
+test('fresh labels are unchanged; no open positions => no warning', () => {
+  assert.equal(stopLossLabel({ pair: 'A_B', units: 1, stopLoss: 'ok' }, false), 'SL ok')
+  assert.equal(stopLossLabel({ pair: 'A_B', units: 1, stopLoss: 'missing' }, false), 'NO STOP')
+  assert.equal(protectionWarning({ ...fx, positions: [] }, true), null)
+  assert.equal(needsAttention({ ...fx, positions: [] }, true), false)
+})
+
+test('stale + halted still shows HALTED', () => {
+  assert.equal(statusLabel({ ...fx, halted: true, haltReason: 'x' }, true), 'STALE · HALTED')
+  assert.equal(statusLabel(fx, true), 'STALE')
+  assert.equal(statusLabel(fx, false), 'ARMED')
 })

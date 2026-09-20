@@ -548,9 +548,11 @@ export default function App() {
   // Read-only trading panel. DEV-only `?tradingFixture=1` shows sample data so
   // the panel is viewable without broker credentials.
   useEffect(() => {
-    if (import.meta.env.DEV && location.search.includes('tradingFixture=1')) {
+    if (import.meta.env.DEV && location.search.includes('tradingFixture=')) {
       // Re-stamp so the staleness check doesn't dim the fixture.
-      const push = () => store.getState().setTrading({ ...FIXTURE_TRADING_SNAPSHOT, at: new Date().toISOString() } as TradingSnapshot)
+      // `tradingFixture=stale` uses a year-2000 timestamp, to view the STALE state.
+      const stamp = () => (location.search.includes('tradingFixture=stale') ? '2000-01-01T00:00:00.000Z' : new Date().toISOString())
+      const push = () => store.getState().setTrading({ ...FIXTURE_TRADING_SNAPSHOT, at: stamp() } as TradingSnapshot)
       push()
       const t = setInterval(push, 10_000)
       return () => clearInterval(t)

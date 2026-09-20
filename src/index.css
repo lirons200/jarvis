@@ -1957,7 +1957,10 @@ kbd {
 .trading-armed .trading-state { color: #5fe0a0; }
 .trading-bar { height: 3px; background: rgba(127, 220, 238, 0.15); border-radius: 2px; }
 .trading-bar-fill { height: 100%; background: #e0a05f; border-radius: 2px; }
-.trading-stale { opacity: 0.45; }
+.trading-stale { border-style: dashed; }
+/* Dim only the reassuring/decorative parts; warnings and SL labels stay at full strength. */
+.trading-stale .trading-title, .trading-stale .trading-bar { opacity: 0.45; }
+.trading-badge { display: none; }
 .trading-journal { opacity: 0.6; font-size: 10px; margin-top: 4px; }
 
 /* Below 900px the right rail sits at right:30px; dock the panel bottom-right, clear of it. */
@@ -1967,5 +1970,11 @@ kbd {
 
 /* Phone width: no free corner that clears the rails, log and ticker, so hide rather than overlap. */
 @media (max-width: 520px) {
-  .trading-panel { display: none; }
+  .trading-panel { display: contents; }
+  .trading-panel > :not(.trading-badge) { display: none; }
+  .trading-badge {
+    display: block; position: absolute; bottom: 64px; right: 12px; pointer-events: none;
+    width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 50%;
+    background: rgba(224, 95, 95, 0.9); color: #fff; font: 700 13px ui-monospace, monospace;
+  }
 }
