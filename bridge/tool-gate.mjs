@@ -23,3 +23,23 @@ export function isReadOnlySessionTool(name) {
   const server = mcpServerOf(name)
   return server !== null && READ_ONLY_SESSION_SERVERS.has(server) && mcpToolOf(name) !== ''
 }
+
+/**
+ * Both spellings of every renamed built-in are listed on purpose. The SDK
+ * presents several tools to the model under newer names — Task is Agent,
+ * BashOutput is TaskOutput, KillShell is TaskStop, and the MCP resource tools
+ * gained a "Tool" suffix — so a set holding only the old names never matches
+ * and the tool falls through to the write branch, which is the opposite of
+ * what these lists mean. Keep both until the old names are certainly gone.
+ */
+export const READ_ONLY_BUILTINS = new Set([
+  'Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'TodoWrite',
+  'Task', 'Agent', 'ToolSearch',
+  'ListMcpResources', 'ListMcpResourcesTool',
+  'ReadMcpResource', 'ReadMcpResourceTool',
+  'BashOutput', 'TaskOutput',
+])
+export const WRITE_BUILTINS = new Set([
+  'Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit',
+  'KillShell', 'TaskStop',
+])
