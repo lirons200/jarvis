@@ -30,7 +30,7 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=true
-ReadWritePaths=/opt/jarvis/bridge/data /var/lib/jarvis
+ReadWritePaths=-/opt/jarvis/bridge/data /var/lib/jarvis
 
 [Install]
 WantedBy=multi-user.target

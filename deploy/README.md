@@ -81,7 +81,7 @@ curl -s http://127.0.0.1:8787/health
 
 The named volume `jarvis-data` holds `bridge/data` (trade journal `trading-journal.jsonl`, `trading-daily-state.json`). It survives `restart`, `up --build` and `down`. **`docker compose down -v` deletes it.** Back it up before you trade for real.
 
-systemd alternative: `npm ci --omit=dev` in `/opt/jarvis`, `chown -R jarvis /opt/jarvis/bridge/data`, copy `deploy/jarvis-bridge.service` to `/etc/systemd/system/`, then `systemctl daemon-reload && systemctl enable --now jarvis-bridge`.
+systemd alternative: `npm ci --omit=dev` in `/opt/jarvis`, `mkdir -p /opt/jarvis/bridge/data && chown -R jarvis /opt/jarvis/bridge/data` (the rsync above skips this directory on purpose so it never overwrites the server's journal, and the unit fails to start if the directory is missing), copy `deploy/jarvis-bridge.service` to `/etc/systemd/system/`, then `systemctl daemon-reload && systemctl enable --now jarvis-bridge`.
 
 ## 4. Do NOT expose the WebSocket publicly
 
