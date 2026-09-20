@@ -33,6 +33,7 @@ import {
 import { startAnalyser, micLevel } from './lib/audio'
 import { probeCapabilities } from './lib/capabilities'
 import { startForexPolling } from './lib/forexTicker'
+import { startTradingPolling, FIXTURE_TRADING_SNAPSHOT, type TradingSnapshot } from './lib/tradingDashboard'
 import { env } from './config'
 
 /**
@@ -541,6 +542,22 @@ export default function App() {
   useEffect(() => {
     const stop = startForexPolling((prices) => store.getState().setForexPrices(prices))
     return stop
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Read-only trading panel. DEV-only `?tradingFixture=1` shows sample data so
+  // the panel is viewable without broker credentials.
+  useEffect(() => {
+    if (import.meta.env.DEV && location.search.includes('tradingFixture=')) {
+      // Re-stamp so the staleness check doesn't dim the fixture.
+      // `tradingFixture=stale` uses a year-2000 timestamp, to view the STALE state.
+      const stamp = () => (location.search.includes('tradingFixture=stale') ? '2000-01-01T00:00:00.000Z' : new Date().toISOString())
+      const push = () => store.getState().setTrading({ ...FIXTURE_TRADING_SNAPSHOT, at: stamp() } as TradingSnapshot)
+      push()
+      const t = setInterval(push, 10_000)
+      return () => clearInterval(t)
+    }
+    return startTradingPolling((snap) => store.getState().setTrading(snap))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

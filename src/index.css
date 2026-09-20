@@ -1930,3 +1930,51 @@ kbd {
   transform: scaleX(-1);
   background: #000;
 }
+
+/* trading panel (read-only) -------------------------------------------------- */
+
+.trading-panel {
+  position: absolute;
+  top: 100px;
+  right: 16px;
+  width: 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 12px;
+  background: rgba(10, 20, 32, 0.85);
+  border: 1px solid rgba(46, 230, 255, 0.3);
+  border-radius: 8px;
+  font: 500 11px/1.4 ui-monospace, monospace;
+  color: var(--accent, #7fdcee);
+  z-index: 5;
+  pointer-events: none;
+}
+.trading-halted { border-color: rgba(224, 95, 95, 0.6); }
+.trading-head, .trading-row { display: flex; justify-content: space-between; gap: 8px; }
+.trading-title { opacity: 0.7; }
+.trading-halted .trading-state, .trading-warn, .trading-halt { color: #e05f5f; }
+.trading-armed .trading-state { color: #5fe0a0; }
+.trading-bar { height: 3px; background: rgba(127, 220, 238, 0.15); border-radius: 2px; }
+.trading-bar-fill { height: 100%; background: #e0a05f; border-radius: 2px; }
+.trading-stale { border-style: dashed; }
+/* Dim only the reassuring/decorative parts; warnings and SL labels stay at full strength. */
+.trading-stale .trading-title, .trading-stale .trading-bar { opacity: 0.45; }
+.trading-badge { display: none; }
+.trading-journal { opacity: 0.6; font-size: 10px; margin-top: 4px; }
+
+/* Below 900px the right rail sits at right:30px; dock the panel bottom-right, clear of it. */
+@media (max-width: 900px) {
+  .trading-panel { top: auto; bottom: 64px; right: 12px; width: 170px; }
+}
+
+/* Phone width: no free corner that clears the rails, log and ticker, so hide rather than overlap. */
+@media (max-width: 520px) {
+  .trading-panel { display: contents; }
+  .trading-panel > :not(.trading-badge) { display: none; }
+  .trading-badge {
+    display: block; position: absolute; bottom: 64px; right: 12px; pointer-events: none;
+    width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 50%;
+    background: rgba(224, 95, 95, 0.9); color: #fff; font: 700 13px ui-monospace, monospace;
+  }
+}
