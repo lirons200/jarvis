@@ -12,8 +12,8 @@ const UNDOCUMENTED_ON_PURPOSE = new Set([
   // (none today) e.g. 'JARVIS_INTERNAL_X' — set by scripts/start.mjs for the bridge, not a user setting
 ])
 
-// process.env.JARVIS_X and process.env['JARVIS_X'] / ["JARVIS_X"]
-const READ_RE = /process\.env(?:\.|\[\s*['"])(JARVIS_[A-Z0-9_]+)/g
+// process.env.JARVIS_X, process.env['JARVIS_X'], and env.JARVIS_X / env['JARVIS_X'] read through a parameter
+const READ_RE = /(?:process\.env|\benv)(?:\.|\[\s*['"])(JARVIS_[A-Z0-9_]+)/g
 
 const SCRIPTS = join(ROOT, 'scripts')
 const listSources = (dir, name) =>

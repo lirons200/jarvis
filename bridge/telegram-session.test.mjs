@@ -44,3 +44,9 @@ test('tools exposed by the three servers equal the exact allowlist', () => {
   }
   assert.deepEqual(exposed.sort(), [...READ_ONLY_SESSION_TOOLS].sort())
 })
+
+test('the Telegram session explicitly disallows the bot co-pilot server', () => {
+  const o = opts()
+  assert.ok(o.disallowedTools.includes('mcp__jarvis_bot'))
+  assert.ok(!Object.keys(o.mcpServers).includes('jarvis_bot'))
+})

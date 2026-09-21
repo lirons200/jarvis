@@ -39,7 +39,7 @@ export function telegramSessionOptions({ abortController, systemPrompt, model, e
     disallowedTools: [
       ...READ_ONLY_BUILTINS, ...WRITE_BUILTINS,
       'mcp__jarvis_trading_control', 'mcp__jarvis', 'mcp__jarvis_ui',
-      'mcp__jarvis_chrome', 'mcp__jarvis_eyes',
+      'mcp__jarvis_chrome', 'mcp__jarvis_eyes', 'mcp__jarvis_bot',
     ],
     systemPrompt,
     cwd,

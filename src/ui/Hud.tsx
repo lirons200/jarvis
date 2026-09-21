@@ -8,6 +8,7 @@ import { Pointer } from './Pointer'
 import { GestureGuide } from './GestureGuide'
 import { ForexTicker } from './ForexTicker'
 import { TradingPanel } from './TradingPanel'
+import { BotPill } from './BotPill'
 
 const statusText: Record<Phase, string> = {
   offline: 'OFFLINE',
@@ -211,6 +212,7 @@ export function Hud() {
 
       {ui.chrome.ticker && <ForexTicker />}
       <TradingPanel />
+      <BotPill />
 
       {/* Left rail: which integrations are live */}
       {ui.chrome.systems && (

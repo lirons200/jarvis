@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-21T10:00:00Z",
+  "ttl_s": 1800,
+  "overall": "warn",
+  "market": { "state": "open" },
+  "headline": { "live_strategies": 10, "last_trade_trading_days": 5 },
+  "checks": [
+    { "id": "sizing_pinned_zero", "status": "ok", "severity": "crit", "evidence": "10 live strategies sized and permitted", "threshold": "size 0 or entry not permitted for 2+ consecutive runs", "since": null },
+    { "id": "trade_velocity", "status": "warn", "severity": "crit", "evidence": "last trade record 2026-09-14 10:00Z, 5 trading days ago", "threshold": "warn 5 / crit 10 trading days without a trade (book-wide)", "since": null },
+    { "id": "live_trades_schema", "status": "ok", "severity": "warn", "evidence": "120 records valid", "threshold": "every record has timestamp, pair, direction, outcome, strategy and a parseable timestamp", "since": null }
+  ]
+}

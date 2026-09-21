@@ -18,6 +18,7 @@
     "bridge:writes": "JARVIS_ALLOW_WRITES=1 node bridge/server.mjs",
     "setup": "node scripts/setup.mjs",
     "backtest": "node scripts/backtest.mjs",
+    "bot:tunnel": "node scripts/bot-tunnel.mjs",
     "verify:telegram-session": "node scripts/verify-telegram-session.mjs",
     "test": "node --test bridge/**/*.test.mjs && npm run test:ui",
     "test:ui": "node --import tsx --test src/lib/**/*.test.ts"
