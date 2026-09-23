@@ -34,6 +34,7 @@ import { startAnalyser, micLevel } from './lib/audio'
 import { probeCapabilities } from './lib/capabilities'
 import { startForexPolling } from './lib/forexTicker'
 import { startTradingPolling, FIXTURE_TRADING_SNAPSHOT, type TradingSnapshot } from './lib/tradingDashboard'
+import { startBotPolling, fixtureBotStatus } from './lib/botStatus'
 import { env } from './config'
 
 /**
@@ -558,6 +559,20 @@ export default function App() {
       return () => clearInterval(t)
     }
     return startTradingPolling((snap) => store.getState().setTrading(snap))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Read-only forex bot health pill. DEV-only `?botFixture=ok|warn|crit|unknown|stale`
+  // shows sample data so the pill is viewable without a bot.
+  useEffect(() => {
+    if (import.meta.env.DEV && location.search.includes('botFixture=')) {
+      const kind = new URLSearchParams(location.search).get('botFixture') ?? 'ok'
+      const push = () => store.getState().setBotStatus(fixtureBotStatus(kind))
+      push()
+      const t = setInterval(push, 10_000)
+      return () => clearInterval(t)
+    }
+    return startBotPolling((s) => store.getState().setBotStatus(s))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

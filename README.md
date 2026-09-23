@@ -395,6 +395,23 @@ taps). Create a separate bot via @BotFather for each program (see also
 
 ---
 
+## Forex bot co-pilot
+
+JARVIS can watch the health of the separate Python forex bot. This is strictly
+**read-only**: JARVIS only ever sends `GET /api/copilot` to the bot's dashboard
+and nothing in JARVIS can change the bot.
+
+1. Start the SSH tunnel (key-based SSH only): `JARVIS_BOT_SSH_TARGET=user@host npm run bot:tunnel`
+2. Set `JARVIS_BOT_DASHBOARD_URL=http://127.0.0.1:18080` and restart the bridge.
+   Plain http is accepted only to loopback; any remote origin must be https.
+
+The `bot_status` and `bot_briefing` tools are available in voice and chat
+sessions only, never over Telegram. A HUD pill shows `BOT OK`, `BOT WARN`,
+`BOT CRIT` or `BOT UNKNOWN`. It shows UNKNOWN whenever the data is unreachable,
+stale or malformed, and UNKNOWN never means healthy.
+
+---
+
 ## Enabling actions
 
 The tool gate starts **read-only**. Search, generation and lookups run freely;

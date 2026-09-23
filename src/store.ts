@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { ForexPriceEntry, RawPrices } from './lib/forexTicker'
 import { mergeForexPrices } from './lib/forexTicker'
 import type { TradingSnapshot } from './lib/tradingDashboard'
+import type { BotStatus } from './lib/botStatus'
 
 export type Phase =
   | 'offline'   // waiting for the click that unlocks audio
@@ -252,6 +253,9 @@ type State = {
   /** Read-only trading status from the bridge; null until the first poll. */
   trading: TradingSnapshot | null
   setTrading: (snap: TradingSnapshot) => void
+  /** Read-only health of the Python forex bot from the bridge; null until the first poll. */
+  botStatus: BotStatus | null
+  setBotStatus: (botStatus: BotStatus) => void
 
   setVoice: (v: string) => void
   setGestures: (on: boolean) => void
@@ -301,6 +305,7 @@ export const useStore = create<State>((set) => ({
   ui: defaultUi(),
   forex: {},
   trading: null,
+  botStatus: null,
 
   setVoice: (voice) => set({ voice }),
   setGestures: (gestures) => set({ gestures }),
@@ -419,6 +424,7 @@ export const useStore = create<State>((set) => ({
   // (src/lib/forexTicker.ts) so it can be unit-tested outside Vite.
   setForexPrices: (raw) => set((s) => ({ forex: mergeForexPrices(s.forex, raw) })),
   setTrading: (trading) => set({ trading }),
+  setBotStatus: (botStatus) => set({ botStatus }),
   // An explicit order outranks the sticky flag. `hold: 'sticky'` only ever
   // meant "survive the next turn boundary"; when someone says "clear the
   // screen", a card staying up because an earlier turn asked nicely reads as

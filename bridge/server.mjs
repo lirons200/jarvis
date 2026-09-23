@@ -20,6 +20,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 import { displayServer } from './panels.mjs'
 import { uiServer } from './ui.mjs'
 import { forexServer, forexRoute, initForex } from './forex.mjs'
+import { botStatusServer, botRoute, isBotConfigured } from './bot-status.mjs'
 import { backtestServer } from './backtest.mjs'
 import { initTrading, tradingServer, tradingControlServer, getTradingStatusText, triggerHalt, isTradingHalted, tradingRoute } from './trading.mjs'
 import { initTelegram, registerCommand, registerMessageHandler, announceToTelegram } from './telegram.mjs'
@@ -294,6 +295,8 @@ function decideTool(name, forceReadOnly = false) {
     // Read-only: fetches historical data and simulates a strategy against
     // it. No account state is ever written.
     if (server === 'jarvis_backtest') return true
+    // Read-only health of the Python forex bot; never changes anything.
+    if (server === 'jarvis_bot') return true
 
     // Read-only status. No orders are placed by this tool.
     if (server === 'jarvis_trading') return true
@@ -731,6 +734,10 @@ const handleRequest = async (req, res) => {
 
   if (req.method === 'GET' && req.url === '/trading/status') {
     return tradingRoute(req, res, cors)
+  }
+
+  if (req.method === 'GET' && req.url === '/bot/status') {
+    return botRoute(req, res, cors)
   }
 
   // Serve local image files to the page. Screenshots and generated art land on
@@ -1264,6 +1271,7 @@ wss.on('connection', (socket) => {
         jarvis_backtest: backtestServer(),
         jarvis_trading: tradingServer(),
         jarvis_trading_control: tradingControlServer(),
+        ...(isBotConfigured() ? { jarvis_bot: botStatusServer() } : {}),
         // The user's own Chrome, over the extension's native-host socket. It
         // holds no per-connection state, but it is built here with the rest so
         // the write gate is read once, at the same point as everything else.
