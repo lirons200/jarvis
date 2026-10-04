@@ -9,11 +9,12 @@
 import http from 'node:http'
 import https from 'node:https'
 
-// v1 needs exactly one endpoint. Drill-down paths (/api/status, /api/strategies,
-// /api/mission, /api/mission/activity) are added only when a tool actually uses
-// them, so no unused surface exists. The bot's two state-changing endpoints
+// Paths are added only when a tool actually uses them, so no unused surface
+// exists: /api/copilot (bot_status) and /api/edge (bot_edge). Other drill-down
+// paths (/api/status, /api/strategies, /api/mission, /api/mission/activity)
+// stay out until a tool needs them. The bot's two state-changing endpoints
 // (/api/mission/epoch, /api/refresh-trades) must never be added.
-export const ALLOWED_PATHS = new Set(['/api/copilot'])
+export const ALLOWED_PATHS = new Set(['/api/copilot', '/api/edge'])
 const LOOPBACK = new Set(['127.0.0.1', '[::1]', 'localhost'])
 export const MAX_BYTES = 512 * 1024
 export const TIMEOUT_MS = 8000

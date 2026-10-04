@@ -1,0 +1,23 @@
+{
+  "generated_at": "2026-10-04 23:00:00 UTC",
+  "epoch": {"baseline_date": "2026-09-01"},
+  "edge_proof": {"built": true, "generated_at": "2026-10-04T22:56:34.014281+00:00"},
+  "daily": {"date": "2026-10-04", "heatmap": [{"date": "2026-10-04", "n": 0, "r": null}]},
+  "long_term": {
+    "live_n": 6,
+    "gate_progress": [
+      {"strategy_id": "inside_bar_eurusd_h1", "n": 2, "gate_n": 30},
+      {"strategy_id": "gbpjpy_ib_h1", "n": 0, "gate_n": 50}
+    ],
+    "cards": {
+      "portfolio": {
+        "id": "portfolio", "name": "Portfolio (all live strategies)", "verdict": "PROMISING",
+        "ev": 0.4535680157925318, "ci95": [0.3915939607593107, 0.5171896397572653], "p_holm": 1.2e-40,
+        "deflated_sharpe_prob": 6.9e-15, "n": 2119,
+        "reasons": ["95% CI of mean R [+0.392, +0.517] excludes zero", "capped at PROMISING: backtest-only evidence"],
+        "live": {"n": 6, "ev": 0.5669466666666666, "z_vs_backtest": 0.186, "status": "INSUFFICIENT"}
+      },
+      "strategies": []
+    }
+  }
+}

@@ -405,7 +405,13 @@ and nothing in JARVIS can change the bot.
 2. Set `JARVIS_BOT_DASHBOARD_URL=http://127.0.0.1:18080` and restart the bridge.
    Plain http is accepted only to loopback; any remote origin must be https.
 
-The `bot_status` and `bot_briefing` tools are available in voice and chat
+JARVIS also reads `GET /api/edge` (exact-path allowlist, still GET-only) for the
+bot's edge-proof state: the `bot_edge` tool and a read-only HUD panel show the
+portfolio verdict (`PROVEN`, `PROMISING`, `UNPROVEN`, `NO_EDGE`), ev, ci95 and live
+trade count against the gate. When live evidence is insufficient the panel and
+the briefing say `BACKTEST-ONLY`.
+
+The `bot_status`, `bot_edge` and `bot_briefing` tools are available in voice and chat
 sessions only, never over Telegram. A HUD pill shows `BOT OK`, `BOT WARN`,
 `BOT CRIT` or `BOT UNKNOWN`. It shows UNKNOWN whenever the data is unreachable,
 stale or malformed, and UNKNOWN never means healthy.

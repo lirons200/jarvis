@@ -46,4 +46,5 @@ test('mcpServerOf tolerates non-strings', () => {
 test('the bot co-pilot tools are never allowed in the forced read-only (Telegram) session', () => {
   assert.equal(isReadOnlySessionTool('mcp__jarvis_bot__bot_status'), false)
   assert.equal(isReadOnlySessionTool('mcp__jarvis_bot__bot_briefing'), false)
+  assert.equal(isReadOnlySessionTool('mcp__jarvis_bot__bot_edge'), false)
 })

@@ -5,8 +5,9 @@
  */
 import { parseBaseUrl, botGet } from './bot-client.mjs'
 import { sanitizeCopilot } from './bot-copilot-schema.mjs'
+import { sanitizeEdge } from './bot-edge-schema.mjs'
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
-import { renderStatusText } from './bot-render.mjs'
+import { renderStatusText, renderEdgeText } from './bot-render.mjs'
 import { askBriefingModel, runBriefing } from './bot-briefing.mjs'
 
 const CACHE_MS = 10_000
@@ -24,9 +25,13 @@ const FAILURE_LABELS = {
 let cache = { at: 0, value: null }
 let lastReachableAt = null
 let inflight = null
+let edgeCache = { at: 0, value: null }
+let edgeInflight = null
 
 export function resetBotStatusCache() {
   cache = { at: 0, value: null }
+  edgeCache = { at: 0, value: null }
+  edgeInflight = null
   lastReachableAt = null
   inflight = null
 }
@@ -79,6 +84,46 @@ export async function getBotState({ nowMs = Date.now(), env = process.env, reque
   return inflight
 }
 
+const edgeFailure = (res) => ({
+  configured: res.kind !== 'not_configured',
+  ...sanitizeEdge(null, 0),
+  reason: FAILURE_LABELS[res.kind] ?? 'unavailable',
+})
+
+async function fetchEdge({ nowMs, env, request }) {
+  const base = parseBaseUrl(env.JARVIS_BOT_DASHBOARD_URL)
+  let value
+  if (!base.ok) {
+    value = edgeFailure(base)
+  } else {
+    const res = await botGet(base, '/api/edge', request ? { request } : undefined)
+    value = res.ok ? { configured: true, ...sanitizeEdge(res.json, nowMs) } : edgeFailure(res)
+  }
+  edgeCache = { at: nowMs, value }
+  return value
+}
+
+/** Same cache and single-flight rules as getBotState, for the read-only /api/edge view. */
+export async function getEdgeState({ nowMs = Date.now(), env = process.env, request } = {}) {
+  if (edgeCache.value && Math.abs(nowMs - edgeCache.at) < CACHE_MS) return edgeCache.value
+  if (edgeInflight) return edgeInflight
+  edgeInflight = fetchEdge({ nowMs, env, request }).finally(() => { edgeInflight = null })
+  return edgeInflight
+}
+
+/** `GET /bot/edge`: the sanitized edge view for the HUD panel. */
+export async function botEdgeRoute(req, res, cors, opts = {}) {
+  let e
+  try {
+    e = await getEdgeState(opts)
+  } catch {
+    res.writeHead(503, { ...cors, 'content-type': 'application/json' })
+    return res.end(JSON.stringify({ error: 'bot edge unavailable' }))
+  }
+  res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+  res.end(JSON.stringify({ ...e, at: new Date(opts.nowMs ?? Date.now()).toISOString() }))
+}
+
 /** `GET /bot/status`, dispatched from handleRequest like /trading/status. */
 export async function botRoute(req, res, cors, opts = {}) {
   let s
@@ -120,11 +165,17 @@ export function botStatusServer() {
         async () => ({ content: [{ type: 'text', text: renderStatusText(await getBotState()) }] }),
       ),
       tool(
+        'bot_edge',
+        'Get the forex bot edge-proof state: portfolio verdict (PROVEN, PROMISING, UNPROVEN, NO_EDGE), ev, 95% CI, live trade count against the gate, and whether the evidence is backtest-only. Read-only.',
+        {},
+        async () => ({ content: [{ type: 'text', text: renderEdgeText(await getEdgeState()) }] }),
+      ),
+      tool(
         'bot_briefing',
         'Get a short plain-English briefing on the forex bot health. Numbers come from code; read-only.',
         {},
         async () => {
-          const r = await runBriefing({ state: await getBotState(), ask: askBriefingModel })
+          const r = await runBriefing({ state: await getBotState(), edge: await getEdgeState(), ask: askBriefingModel })
           return { content: [{ type: 'text', text: r.note ? `${r.note}\n\n${r.text}` : r.text }] }
         },
       ),

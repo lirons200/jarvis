@@ -35,6 +35,7 @@ import { probeCapabilities } from './lib/capabilities'
 import { startForexPolling } from './lib/forexTicker'
 import { startTradingPolling, FIXTURE_TRADING_SNAPSHOT, type TradingSnapshot } from './lib/tradingDashboard'
 import { startBotPolling, fixtureBotStatus } from './lib/botStatus'
+import { startEdgePolling } from './lib/botEdge'
 import { env } from './config'
 
 /**
@@ -575,6 +576,9 @@ export default function App() {
     return startBotPolling((s) => store.getState().setBotStatus(s))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Read-only edge-proof panel; hidden until the bridge reports the bot configured.
+  useEffect(() => startEdgePolling((e) => store.getState().setBotEdge(e)), [])
 
   // -- clap to start --------------------------------------------------------
 

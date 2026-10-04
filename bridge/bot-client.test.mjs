@@ -28,9 +28,9 @@ test('parseBaseUrl reports not_configured for unset or blank', () => {
   for (const v of [undefined, '', '   ', null]) assert.equal(parseBaseUrl(v).kind, 'not_configured')
 })
 
-test('only /api/copilot is allowed in v1; everything else, including the state-changing paths, never is', () => {
-  assert.deepEqual([...ALLOWED_PATHS], ['/api/copilot'])
-  for (const bad of ['/api/mission/epoch', '/api/refresh-trades', '/api/status', '/api/mission', '/api//copilot', '/api/../etc', '/api/%2e%2e/copilot', '/api/copilot?x=1', '/api/copilot/', '/API/copilot', '', undefined, 5]) {
+test('only /api/copilot and /api/edge are allowed; everything else, including the state-changing paths, never is', () => {
+  assert.deepEqual([...ALLOWED_PATHS].sort(), ['/api/copilot', '/api/edge'])
+  for (const bad of ['/api/mission/epoch', '/api/refresh-trades', '/api/status', '/api/mission', '/api//copilot', '/api/../etc', '/api/%2e%2e/copilot', '/api/copilot?x=1', '/api/copilot/', '/API/copilot', '/api/edge/', '/api/edge?x=1', '/api/edge/../mission/epoch', '/api/edge%2f', '/API/edge', '', undefined, 5]) {
     assert.equal(isAllowedPath(bad), false, String(bad))
   }
 })
@@ -123,4 +123,11 @@ test('realRequest enforces a TOTAL deadline even if the server drips bytes', { t
     assert.equal(r.kind, 'unreachable')
     assert.ok(Date.now() - started < 4000, 'deadline must not be an idle timeout')
   } finally { s.server.close() }
+})
+
+test('botGet can GET /api/edge, still GET-only against the configured origin', async () => {
+  const calls = []
+  const res = await botGet(parseBaseUrl('http://127.0.0.1:18080'), '/api/edge', { request: async (url, opts) => { calls.push({ url, opts }); return okJson({ a: 1 })() } })
+  assert.equal(res.ok, true)
+  assert.deepEqual(calls, [{ url: 'http://127.0.0.1:18080/api/edge', opts: { method: 'GET' } }])
 })
