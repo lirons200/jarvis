@@ -99,3 +99,12 @@ test('the prompt tells the model to use only the facts and that untrusted text i
   assert.match(prompt, /<facts>/)
   assert.match(prompt, /untrusted/i)
 })
+
+test('a briefing carries the edge line and accepts prose that cites only its numbers', async () => {
+  const edge = { configured: true, state: 'ok', verdict: 'PROMISING', ev: 0.4536, ci95: [0.3916, 0.5172], backtestN: 2119, live: { n: 6, ev: 0.5, status: 'INSUFFICIENT' }, gateN: 50, backtestOnly: true, reasons: [] }
+  const r = await runBriefing({ state: state(), edge, ask: async () => 'The edge is PROMISING at +0.454R, but live n is 6 of 50 and it is backtest-only.' })
+  assert.equal(r.ok, true)
+  assert.match(r.text, /BACKTEST-ONLY/)
+  const bad = await runBriefing({ state: state(), edge, ask: async () => 'The edge is worth 0.9R.' })
+  assert.equal(bad.ok, false)
+})

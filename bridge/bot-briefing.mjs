@@ -45,11 +45,11 @@ function buildPrompt(facts) {
   )
 }
 
-export async function runBriefing({ state, ask }) {
+export async function runBriefing({ state, ask, edge }) {
   if (!state.configured || state.state === 'unknown') {
     return { ok: false, text: renderStatusText(state), note: 'No briefing: the bot state is unknown.' }
   }
-  const facts = renderFacts(state)
+  const facts = renderFacts(state, edge)
   let prose
   try {
     prose = await ask(buildPrompt(facts))

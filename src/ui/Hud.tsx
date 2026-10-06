@@ -9,6 +9,7 @@ import { GestureGuide } from './GestureGuide'
 import { ForexTicker } from './ForexTicker'
 import { TradingPanel } from './TradingPanel'
 import { BotPill } from './BotPill'
+import { EdgePanel } from './EdgePanel'
 
 const statusText: Record<Phase, string> = {
   offline: 'OFFLINE',
@@ -213,6 +214,7 @@ export function Hud() {
       {ui.chrome.ticker && <ForexTicker />}
       <TradingPanel />
       <BotPill />
+      <EdgePanel />
 
       {/* Left rail: which integrations are live */}
       {ui.chrome.systems && (

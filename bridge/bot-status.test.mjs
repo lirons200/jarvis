@@ -2,7 +2,7 @@ import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { botRoute, botStatusServer, getBotState, isBotConfigured, resetBotStatusCache } from './bot-status.mjs'
+import { botEdgeRoute, botRoute, botStatusServer, getBotState, getEdgeState, isBotConfigured, resetBotStatusCache } from './bot-status.mjs'
 
 const fixture = () => JSON.parse(readFileSync(fileURLToPath(new URL('./fixtures/copilot-sample.json', import.meta.url)), 'utf8'))
 const ENV = { JARVIS_BOT_DASHBOARD_URL: 'http://127.0.0.1:18080' }
@@ -93,8 +93,50 @@ test('the HUD route returns only a compact sanitized body', async () => {
   assert.deepEqual(Object.keys(body).sort(), ['ageSeconds', 'at', 'configured', 'headline', 'lastReachableAt', 'market', 'reason', 'stale', 'state', 'topIssue'])
 })
 
-test('the MCP server exposes exactly bot_status and bot_briefing', () => {
+test('the MCP server exposes exactly bot_status, bot_edge and bot_briefing', () => {
   const server = botStatusServer()
   assert.equal(server.name, 'jarvis_bot')
-  assert.deepEqual(Object.keys(server.instance._registeredTools).sort(), ['bot_briefing', 'bot_status'])
+  assert.deepEqual(Object.keys(server.instance._registeredTools).sort(), ['bot_briefing', 'bot_edge', 'bot_status'])
+})
+
+const edgeFixture = () => JSON.parse(readFileSync(fileURLToPath(new URL('./fixtures/edge-sample.json', import.meta.url)), 'utf8'))
+const EDGE_NOW = Date.parse('2026-10-04T23:00:30Z')
+
+test('getEdgeState reads /api/edge only, sanitizes it, and caches for 10 seconds', async () => {
+  const urls = []
+  const request = async (url) => { urls.push(url); return okReq(edgeFixture())() }
+  const e = await getEdgeState({ nowMs: EDGE_NOW, env: ENV, request })
+  assert.equal(e.state, 'ok')
+  assert.equal(e.verdict, 'PROMISING')
+  assert.equal(e.backtestOnly, true)
+  await getEdgeState({ nowMs: EDGE_NOW + 5_000, env: ENV, request })
+  assert.deepEqual(urls, ['http://127.0.0.1:18080/api/edge'])
+})
+
+test('edge failures are unknown with a specific reason; not configured makes no request', async () => {
+  let e = await getEdgeState({ nowMs: EDGE_NOW, env: ENV, request: async () => { throw Object.assign(new Error('x'), { code: 'ECONNREFUSED' }) } })
+  assert.equal(e.state, 'unknown')
+  assert.match(e.reason, /unreachable \(network\)/)
+  assert.equal(e.verdict, null)
+  resetBotStatusCache()
+  let called = false
+  e = await getEdgeState({ nowMs: EDGE_NOW, env: {}, request: async () => { called = true } })
+  assert.equal(e.configured, false)
+  assert.equal(e.state, 'unknown')
+  assert.equal(called, false)
+})
+
+test('the edge HUD route returns only the sanitized view plus a timestamp', async () => {
+  await getEdgeState({ nowMs: EDGE_NOW, env: ENV, request: okReq(edgeFixture()) })
+  let status, body
+  const res = { writeHead: (s) => { status = s }, end: (b) => { body = JSON.parse(b) } }
+  await botEdgeRoute({}, res, {}, { nowMs: EDGE_NOW, env: ENV })
+  assert.equal(status, 200)
+  assert.deepEqual(Object.keys(body).sort(), ['ageSeconds', 'at', 'backtestN', 'backtestOnly', 'ci95', 'configured', 'ev', 'gateN', 'generatedAt', 'live', 'reason', 'reasons', 'state', 'verdict'])
+})
+
+test('the bot_edge tool is registered and described as read-only', () => {
+  const t = botStatusServer().instance._registeredTools.bot_edge
+  assert.ok(t)
+  assert.match(t.description, /[Rr]ead-only/)
 })

@@ -20,7 +20,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 import { displayServer } from './panels.mjs'
 import { uiServer } from './ui.mjs'
 import { forexServer, forexRoute, initForex } from './forex.mjs'
-import { botStatusServer, botRoute, isBotConfigured } from './bot-status.mjs'
+import { botStatusServer, botRoute, botEdgeRoute, isBotConfigured } from './bot-status.mjs'
 import { backtestServer } from './backtest.mjs'
 import { initTrading, tradingServer, tradingControlServer, getTradingStatusText, triggerHalt, isTradingHalted, tradingRoute } from './trading.mjs'
 import { initTelegram, registerCommand, registerMessageHandler, announceToTelegram } from './telegram.mjs'
@@ -738,6 +738,10 @@ const handleRequest = async (req, res) => {
 
   if (req.method === 'GET' && req.url === '/bot/status') {
     return botRoute(req, res, cors)
+  }
+
+  if (req.method === 'GET' && req.url === '/bot/edge') {
+    return botEdgeRoute(req, res, cors)
   }
 
   // Serve local image files to the page. Screenshots and generated art land on
